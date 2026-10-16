@@ -2,12 +2,15 @@ package pe.Planilla.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import pe.Planilla.model.dto.HorasExtrasRequestDTO;
 import pe.Planilla.model.dto.MovimientoRequestDTO;
+import pe.Planilla.model.dto.MovimientoResponseDTO;
 import pe.Planilla.model.dto.VacacionRequestDTO;
 import pe.Planilla.model.entity.ConceptoRemunerativo;
 import pe.Planilla.model.entity.Empleado;
 import pe.Planilla.model.entity.MovimientoPlanilla;
+import pe.Planilla.realtime.NotificadorTiempoReal;
 import pe.Planilla.repository.ConceptoRemunerativoRepository;
 import pe.Planilla.repository.EmpleadoRepository;
 import pe.Planilla.repository.MovimientoPlanillaRepository;
@@ -15,6 +18,8 @@ import pe.Planilla.service.MovimientoService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -23,13 +28,18 @@ public class MovimientoServiceImpl implements MovimientoService {
     private final MovimientoPlanillaRepository movimientoRepository;
     private final EmpleadoRepository empleadoRepository;
     private final ConceptoRemunerativoRepository conceptoRepository;
+    private final NotificadorTiempoReal notificador;
 
     @Override
-    public MovimientoPlanilla registrarBonoOComision(MovimientoRequestDTO dto) {
+    public MovimientoResponseDTO registrarBonoOComision(MovimientoRequestDTO dto) {
         Empleado empleado = empleadoRepository.findById(dto.getIdEmpleado())
                 .orElseThrow(() -> new RuntimeException("Empleado no encontrado."));
         ConceptoRemunerativo concepto = conceptoRepository.findByCodigo(dto.getCodigoConcepto())
                 .orElseThrow(() -> new RuntimeException("Concepto no encontrado."));
+        validarPeriodo(dto.getPeriodo());
+        if (dto.getMonto() == null || dto.getMonto().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("El monto debe ser mayor a cero.");
+        }
 
         MovimientoPlanilla movimiento = new MovimientoPlanilla();
         movimiento.setEmpleado(empleado);
@@ -37,50 +47,60 @@ public class MovimientoServiceImpl implements MovimientoService {
         movimiento.setPeriodo(dto.getPeriodo());
         movimiento.setMonto(dto.getMonto());
 
-        return movimientoRepository.save(movimiento);
+        return guardarYNotificar(movimiento);
     }
 
     @Override
-    public MovimientoPlanilla calcularYRegistrarHorasExtras(HorasExtrasRequestDTO dto) {
+    @Transactional
+    public List<MovimientoResponseDTO> calcularYRegistrarHorasExtras(HorasExtrasRequestDTO dto) {
         Empleado empleado = empleadoRepository.findById(dto.getIdEmpleado())
                 .orElseThrow(() -> new RuntimeException("Empleado no encontrado."));
+        validarPeriodo(dto.getPeriodo());
+        if (dto.getHorasAl25() < 0 || dto.getHorasAl35() < 0 || (dto.getHorasAl25() + dto.getHorasAl35()) == 0) {
+            throw new RuntimeException("Indique al menos una hora extra (las horas no pueden ser negativas).");
+        }
 
-        // Buscamos el concepto de Horas Extras (código '0201' que insertamos en el SQL)
-        ConceptoRemunerativo conceptoHE = conceptoRepository.findByCodigo("0201")
-                .orElseThrow(() -> new RuntimeException("El concepto de Horas Extras (0201) no existe."));
-
-        // 1. Calcular el valor de 1 hora normal de trabajo (con 4 decimales para no perder precisión)
+        // Valor de 1 hora normal: sueldo / 30 días / 8 horas (4 decimales para no perder precisión)
         BigDecimal valorDia = empleado.getSueldoBase().divide(new BigDecimal("30"), 4, RoundingMode.HALF_UP);
         BigDecimal valorHoraNormal = valorDia.divide(new BigDecimal("8"), 4, RoundingMode.HALF_UP);
 
-        // 2. Calcular el valor con recargo de Ley (25% y 35%)
-        BigDecimal valorHora25 = valorHoraNormal.multiply(new BigDecimal("1.25"));
-        BigDecimal valorHora35 = valorHoraNormal.multiply(new BigDecimal("1.35"));
+        // Un movimiento por tasa, con el código SUNAT de cada una (los crea el DataSeeder)
+        List<MovimientoResponseDTO> resultado = new ArrayList<>();
+        if (dto.getHorasAl25() > 0) {
+            resultado.add(registrarHorasExtrasConTasa(empleado, dto.getPeriodo(), "0105", valorHoraNormal, "1.25", dto.getHorasAl25()));
+        }
+        if (dto.getHorasAl35() > 0) {
+            resultado.add(registrarHorasExtrasConTasa(empleado, dto.getPeriodo(), "0106", valorHoraNormal, "1.35", dto.getHorasAl35()));
+        }
+        return resultado;
+    }
 
-        // 3. Multiplicar por la cantidad de horas realizadas
-        BigDecimal total25 = valorHora25.multiply(new BigDecimal(dto.getHorasAl25()));
-        BigDecimal total35 = valorHora35.multiply(new BigDecimal(dto.getHorasAl35()));
+    private MovimientoResponseDTO registrarHorasExtrasConTasa(Empleado empleado, String periodo, String codigoConcepto,
+                                                             BigDecimal valorHoraNormal, String recargo, int horas) {
+        ConceptoRemunerativo concepto = conceptoRepository.findByCodigo(codigoConcepto)
+                .orElseThrow(() -> new RuntimeException("El concepto de Horas Extras (" + codigoConcepto + ") no existe."));
+        BigDecimal monto = valorHoraNormal.multiply(new BigDecimal(recargo))
+                .multiply(new BigDecimal(horas)).setScale(2, RoundingMode.HALF_UP);
 
-        // 4. Sumar todo y redondear a 2 decimales para la boleta
-        BigDecimal montoTotalHorasExtras = total25.add(total35).setScale(2, RoundingMode.HALF_UP);
-
-        // 5. Registrar el movimiento
         MovimientoPlanilla movimiento = new MovimientoPlanilla();
         movimiento.setEmpleado(empleado);
-        movimiento.setConcepto(conceptoHE);
-        movimiento.setPeriodo(dto.getPeriodo());
-        movimiento.setMonto(montoTotalHorasExtras);
-
-        return movimientoRepository.save(movimiento);
+        movimiento.setConcepto(concepto);
+        movimiento.setPeriodo(periodo);
+        movimiento.setMonto(monto);
+        movimiento.setCantidad(horas);
+        return guardarYNotificar(movimiento);
     }
 
     @Override
-    public MovimientoPlanilla registrarVacaciones(VacacionRequestDTO dto) {
+    public MovimientoResponseDTO registrarVacaciones(VacacionRequestDTO dto) {
         Empleado empleado = empleadoRepository.findById(dto.getIdEmpleado())
                 .orElseThrow(() -> new RuntimeException("Empleado no encontrado."));
+        validarPeriodo(dto.getPeriodo());
+        if (dto.getDiasGozados() <= 0) {
+            throw new RuntimeException("Los días de vacaciones deben ser mayores a cero.");
+        }
 
-        // El código SUNAT oficial para Remuneración Vacacional es 0118.
-        // Si no lo tienes en tu BD, debes insertarlo mediante el POST /api/conceptos
+        // El código SUNAT oficial para Remuneración Vacacional es 0118 (lo crea el DataSeeder).
         ConceptoRemunerativo conceptoVacacion = conceptoRepository.findByCodigo("0118")
                 .orElseThrow(() -> new RuntimeException("El concepto de Vacaciones (0118) no existe en la BD."));
 
@@ -101,7 +121,52 @@ public class MovimientoServiceImpl implements MovimientoService {
         movimiento.setConcepto(conceptoVacacion);
         movimiento.setPeriodo(dto.getPeriodo());
         movimiento.setMonto(montoVacaciones);
+        movimiento.setCantidad(dto.getDiasGozados()); // la planilla descuenta estos días del sueldo para no pagarlos dos veces
 
-        return movimientoRepository.save(movimiento);
+        return guardarYNotificar(movimiento);
+    }
+
+    @Override
+    public List<MovimientoResponseDTO> listarPorPeriodo(String periodo) {
+        validarPeriodo(periodo);
+        return movimientoRepository.findByPeriodoOrderByIdMovimientoDesc(periodo).stream()
+                .map(this::convertirADTO)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public void eliminar(Integer idMovimiento) {
+        MovimientoPlanilla movimiento = movimientoRepository.findById(idMovimiento)
+                .orElseThrow(() -> new RuntimeException("Movimiento no encontrado."));
+        MovimientoResponseDTO dto = convertirADTO(movimiento);
+        movimientoRepository.delete(movimiento);
+        notificador.publicar("movimientos", "ELIMINADO", idMovimiento, dto);
+    }
+
+    private MovimientoResponseDTO guardarYNotificar(MovimientoPlanilla movimiento) {
+        MovimientoResponseDTO dto = convertirADTO(movimientoRepository.save(movimiento));
+        notificador.publicar("movimientos", "CREADO", dto.getIdMovimiento(), dto); // tiempo real
+        return dto;
+    }
+
+    private void validarPeriodo(String periodo) {
+        if (periodo == null || !periodo.matches("\\d{4}-(0[1-9]|1[0-2])")) {
+            throw new RuntimeException("El periodo debe tener el formato AAAA-MM (Ej: 2026-10).");
+        }
+    }
+
+    private MovimientoResponseDTO convertirADTO(MovimientoPlanilla m) {
+        MovimientoResponseDTO dto = new MovimientoResponseDTO();
+        dto.setIdMovimiento(m.getIdMovimiento());
+        dto.setIdEmpleado(m.getEmpleado().getIdEmpleado());
+        dto.setEmpleado(m.getEmpleado().getNombres() + " " + m.getEmpleado().getApellidos());
+        dto.setCodigoConcepto(m.getConcepto().getCodigo());
+        dto.setConcepto(m.getConcepto().getDescripcion());
+        dto.setTipo(m.getConcepto().getTipo());
+        dto.setPeriodo(m.getPeriodo());
+        dto.setMonto(m.getMonto());
+        dto.setCantidad(m.getCantidad());
+        return dto;
     }
 }

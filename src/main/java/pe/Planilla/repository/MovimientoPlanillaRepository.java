@@ -10,5 +10,7 @@ import java.util.List;
 public interface MovimientoPlanillaRepository extends JpaRepository<MovimientoPlanilla, Integer> {
     // Buscar los movimientos de un empleado en un mes específico
     List<MovimientoPlanilla> findByEmpleado_IdEmpleadoAndPeriodo(Integer idEmpleado, String periodo);
-}
 
+    // Todos los movimientos del mes, los más recientes primero (pantalla de movimientos)
+    List<MovimientoPlanilla> findByPeriodoOrderByIdMovimientoDesc(String periodo);
+}

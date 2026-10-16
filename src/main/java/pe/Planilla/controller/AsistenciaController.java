@@ -24,6 +24,12 @@ public class AsistenciaController {
         return ResponseEntity.status(HttpStatus.CREATED).body(nuevaAsistencia);
     }
 
+    // 1b. Tareo de todos los empleados en un periodo (Ej: ?periodo=2026-10)
+    @GetMapping
+    public ResponseEntity<List<AsistenciaResponseDTO>> listarPorPeriodo(@RequestParam String periodo) {
+        return ResponseEntity.ok(asistenciaService.listarPorPeriodo(periodo));
+    }
+
     // 2. Ver la lista de asistencias de un empleado en un mes específico
     @GetMapping("/empleado/{idEmpleado}")
     public ResponseEntity<List<AsistenciaResponseDTO>> obtenerPorMes(

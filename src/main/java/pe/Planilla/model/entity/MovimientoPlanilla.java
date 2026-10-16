@@ -26,4 +26,7 @@ public class MovimientoPlanilla {
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal monto;
+
+    /** Días de vacaciones o cantidad de horas extras que originaron el monto (null en bonos/descuentos). */
+    private Integer cantidad;
 }

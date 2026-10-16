@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import pe.Planilla.config.PlanillaProperties;
 import pe.Planilla.service.PlameService;
 
 @RestController
@@ -14,14 +15,15 @@ import pe.Planilla.service.PlameService;
 public class PlameController {
 
     private final PlameService plameService;
+    private final PlanillaProperties props;
 
     @GetMapping("/descargar")
     public ResponseEntity<String> descargarArchivoPlame(@RequestParam String periodo) {
         String contenidoTxt = plameService.generarTramaRemuneraciones(periodo);
 
         // SUNAT exige que el nombre del archivo tenga el formato: 0601 + Año + Mes + RUC + .rem
-        // Usaremos un RUC ficticio genérico (Ej: 20123456789)
-        String rucEmpresa = "20123456789";
+        // El RUC sale de app.planilla.ruc (variable de entorno EMPRESA_RUC); por defecto es uno ficticio.
+        String rucEmpresa = props.getRuc();
         String anio = periodo.split("-")[0];
         String mes = periodo.split("-")[1];
         String nombreArchivo = "0601" + anio + mes + rucEmpresa + ".rem";

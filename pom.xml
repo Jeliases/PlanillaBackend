@@ -42,6 +42,19 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- WebSocket + STOMP (actualizaciones en tiempo real hacia Angular) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+        <!-- Excel (.xlsx): plantilla descargable y carga masiva de empleados -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+
         <!-- DevTools para recarga rápida -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -4,8 +4,10 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.lang.NonNull;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -44,21 +46,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         // Extraemos el Token (le quitamos la palabra "Bearer ")
         jwt = authHeader.substring(7);
-        username = jwtService.extractUsername(jwt);
 
-        // Si hay un usuario en el token, pero aún no está autenticado en este hilo del servidor
-        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+        try {
+            username = jwtService.extractUsername(jwt);
 
-            // Validamos matemáticamente la firma del Token
-            if (jwtService.isTokenValid(jwt, userDetails)) {
-                // Autenticamos al usuario en Spring Security
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities()
-                );
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+            // Si hay un usuario en el token, pero aún no está autenticado en este hilo del servidor
+            if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+
+                // Validamos matemáticamente la firma del Token
+                if (jwtService.isTokenValid(jwt, userDetails)) {
+                    // Autenticamos al usuario en Spring Security
+                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                            userDetails, null, userDetails.getAuthorities()
+                    );
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                }
             }
+        } catch (JwtException | IllegalArgumentException | UsernameNotFoundException e) {
+            // Token vencido, manipulado o de un usuario que ya no existe: se trata como "sin autenticar"
+            // y SecurityConfig responderá 401 (antes esto reventaba con un 500).
         }
 
         // Continuamos con la petición hacia el Controlador (Controller)

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import pe.Planilla.model.dto.ConceptoRequestDTO;
 import pe.Planilla.model.dto.ConceptoResponseDTO;
 import pe.Planilla.model.entity.ConceptoRemunerativo;
+import pe.Planilla.realtime.NotificadorTiempoReal;
 import pe.Planilla.repository.ConceptoRemunerativoRepository;
 import pe.Planilla.service.ConceptoService;
 
@@ -16,6 +17,7 @@ import java.util.stream.Collectors;
 public class ConceptoServiceImpl implements ConceptoService {
 
     private final ConceptoRemunerativoRepository conceptoRepository;
+    private final NotificadorTiempoReal notificador;
 
     @Override
     public List<ConceptoResponseDTO> listarTodos() {
@@ -39,7 +41,9 @@ public class ConceptoServiceImpl implements ConceptoService {
         concepto.setAfectaEssalud(requestDTO.getAfectaEssalud());
 
         ConceptoRemunerativo conceptoGuardado = conceptoRepository.save(concepto);
-        return convertirAResponseDTO(conceptoGuardado);
+        ConceptoResponseDTO dto = convertirAResponseDTO(conceptoGuardado);
+        notificador.publicar("conceptos", "CREADO", dto.getIdConcepto(), dto); // tiempo real
+        return dto;
     }
 
     private ConceptoResponseDTO convertirAResponseDTO(ConceptoRemunerativo concepto) {

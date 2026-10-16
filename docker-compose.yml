@@ -1,0 +1,24 @@
+# MySQL exclusivo del proyecto Planilla (no toca otros contenedores/BD de la máquina).
+# Levantar:  docker compose up -d
+# Bajar:     docker compose down        (agrega -v para borrar también los datos)
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: planilla-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: mysql
+      MYSQL_DATABASE: bd_planilla
+      TZ: UTC
+    ports:
+      - "3307:3306"   # 3306 suele estar ocupado por otros MySQL locales
+    volumes:
+      - planilla_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pmysql"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  planilla_mysql_data:

@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Pantalla de Angular copiada al empaquetar para el deploy (se genera, no se sube)
+/src/main/resources/static/
+
+# Script local del demo (contiene claves)
+iniciar-demo.ps1

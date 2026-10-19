@@ -53,7 +53,7 @@ class CalculosPlanillaTest {
 
     @Test
     void asignacionFamiliarEsDiezPorCientoDeLaRmv() {
-        assertMonto("113.00", calc.asignacionFamiliarMensual());
+        assertMonto("123.00", calc.asignacionFamiliarMensual()); // RMV 1,230 desde oct-2026
     }
 
     // --------------------------------------------------------- Pensiones
@@ -82,6 +82,16 @@ class CalculosPlanillaTest {
         assertMonto("200.00", l.get(0).monto()); // aporte 10%
         assertMonto("29.40", l.get(1).monto());  // comisión 1.47%
         assertMonto("27.40", l.get(2).monto());  // prima 1.37%
+    }
+
+    @Test
+    void afpComisionMixtaNoDescuentaComisionPorFlujo() {
+        // Boleta modelo de la empresa: 1,800 -> aporte 180.00 + prima 24.66, comisión 0 (mixta)
+        List<LineaPension> l = calc.pension("AFP", habitat(), "MIXTA", bd("1800"));
+        assertEquals(2, l.size());
+        assertMonto("180.00", l.get(0).monto());
+        assertMonto("24.66", l.get(1).monto());
+        assertEquals(3, calc.pension("AFP", habitat(), "FLUJO", bd("1800")).size()); // con flujo sí hay comisión
     }
 
     @Test

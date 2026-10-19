@@ -10,6 +10,8 @@ import pe.Planilla.model.dto.VacacionRequestDTO;
 import pe.Planilla.model.entity.ConceptoRemunerativo;
 import pe.Planilla.model.entity.Empleado;
 import pe.Planilla.model.entity.MovimientoPlanilla;
+import pe.Planilla.model.entity.PlanillaCabecera;
+import pe.Planilla.repository.PlanillaCabeceraRepository;
 import pe.Planilla.realtime.NotificadorTiempoReal;
 import pe.Planilla.repository.ConceptoRemunerativoRepository;
 import pe.Planilla.repository.EmpleadoRepository;
@@ -28,6 +30,7 @@ public class MovimientoServiceImpl implements MovimientoService {
     private final MovimientoPlanillaRepository movimientoRepository;
     private final EmpleadoRepository empleadoRepository;
     private final ConceptoRemunerativoRepository conceptoRepository;
+    private final PlanillaCabeceraRepository planillaRepository;
     private final NotificadorTiempoReal notificador;
 
     @Override
@@ -139,6 +142,7 @@ public class MovimientoServiceImpl implements MovimientoService {
     public void eliminar(Integer idMovimiento) {
         MovimientoPlanilla movimiento = movimientoRepository.findById(idMovimiento)
                 .orElseThrow(() -> new RuntimeException("Movimiento no encontrado."));
+        validarPeriodo(movimiento.getPeriodo());
         MovimientoResponseDTO dto = convertirADTO(movimiento);
         movimientoRepository.delete(movimiento);
         notificador.publicar("movimientos", "ELIMINADO", idMovimiento, dto);
@@ -154,6 +158,12 @@ public class MovimientoServiceImpl implements MovimientoService {
         if (periodo == null || !periodo.matches("\\d{4}-(0[1-9]|1[0-2])")) {
             throw new RuntimeException("El periodo debe tener el formato AAAA-MM (Ej: 2026-10).");
         }
+        // Una planilla cerrada no admite movimientos nuevos: hay que reabrirla con autorización
+        planillaRepository.findByPeriodo(periodo)
+                .filter(p -> PlanillaCabecera.CERRADA.equals(p.getEstado()))
+                .ifPresent(p -> {
+                    throw new RuntimeException("La planilla " + periodo + " está cerrada: no se pueden registrar ni anular movimientos.");
+                });
     }
 
     private MovimientoResponseDTO convertirADTO(MovimientoPlanilla m) {

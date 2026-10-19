@@ -14,4 +14,20 @@ public class AsistenciaResponseDTO {
     private LocalTime horaSalida;
     private String estado;
     private Integer minutosTardanza;
+
+    // Marcaciones del reloj (en este orden) y horario que correspondía
+    private LocalTime marcaIngreso;
+    private LocalTime marcaAlmuerzoInicio;
+    private LocalTime marcaAlmuerzoFin;
+    private LocalTime marcaSalida;
+    private LocalTime horaProgramadaEntrada;
+    private LocalTime horaProgramadaSalida;
+    private Integer minutosExtra;
+    private Integer horasExtraAutorizadas;
+    private String autorizadoPor;
+
+    private boolean justificada;
+    private String motivoJustificacion;
+    private String origen;
+    private String observacion;
 }

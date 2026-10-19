@@ -10,14 +10,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import pe.Planilla.model.entity.Afp;
 import pe.Planilla.model.entity.ConceptoRemunerativo;
+import pe.Planilla.model.entity.Feriado;
 import pe.Planilla.model.entity.RegimenLaboral;
+import pe.Planilla.model.entity.ReglaTardanza;
 import pe.Planilla.model.entity.Usuario;
-import pe.Planilla.repository.AfpRepository;
-import pe.Planilla.repository.ConceptoRemunerativoRepository;
-import pe.Planilla.repository.RegimenLaboralRepository;
-import pe.Planilla.repository.UsuarioRepository;
+import pe.Planilla.repository.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 /**
  * Datos mínimos para que el sistema funcione desde el primer arranque:
@@ -34,6 +34,8 @@ public class DataSeeder implements ApplicationRunner {
     private final ConceptoRemunerativoRepository conceptoRepository;
     private final UsuarioRepository usuarioRepository;
     private final AfpRepository afpRepository;
+    private final ReglaTardanzaRepository reglaTardanzaRepository;
+    private final FeriadoRepository feriadoRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${app.seed.admin-username}")
@@ -45,10 +47,14 @@ public class DataSeeder implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         // El nombre "Cuarta Categoría (RxH)" se compara tal cual en PlanillaServiceImpl.
-        sembrarRegimen("Régimen General", 30, "1.00");
-        sembrarRegimen("Pequeña Empresa (Mype)", 15, "0.50");
-        sembrarRegimen("Microempresa (Remype)", 15, "0.00");
-        sembrarRegimen("Cuarta Categoría (RxH)", 0, "0.00");
+        // Asignación familiar: solo el Régimen General (respuesta de la empresa: Mype y Micro no la pagan)
+        sembrarRegimen("Régimen General", 30, "1.00", true);
+        sembrarRegimen("Pequeña Empresa (Mype)", 15, "0.50", false);
+        sembrarRegimen("Microempresa (Remype)", 15, "0.00", false);
+        sembrarRegimen("Cuarta Categoría (RxH)", 0, "0.00", false);
+
+        sembrarReglasTardanza();
+        sembrarFeriados2026();
 
         // Las primeras versiones sembraron códigos que en la Tabla 22 de SUNAT significan otra cosa
         // (0101 = alimentación, 0201 = asignación familiar). Se corrigen conservando los movimientos ya registrados.
@@ -68,24 +74,94 @@ public class DataSeeder implements ApplicationRunner {
         sembrarAfp("Prima", "0.0160");
         sembrarAfp("Profuturo", "0.0169");
 
+        // Bases creadas antes de existir la columna "activo": los usuarios quedaron en falso y nadie podría entrar
+        java.util.List<Usuario> usuarios = usuarioRepository.findAll();
+        if (!usuarios.isEmpty() && usuarios.stream().noneMatch(Usuario::isActivo)) {
+            usuarios.forEach(u -> {
+                u.setActivo(true);
+                if (u.getRol() == null || u.getRol().isBlank()) u.setRol(Usuario.ROL_ADMIN);
+            });
+            usuarioRepository.saveAll(usuarios);
+            log.warn("Se activaron los usuarios existentes (migración de la columna 'activo').");
+        }
+
         if (usuarioRepository.count() == 0) {
             Usuario admin = new Usuario();
             admin.setUsername(adminUsername);
             admin.setPassword(passwordEncoder.encode(adminPassword));
-            admin.setRol("ADMIN");
+            admin.setRol(Usuario.ROL_ADMIN);
+            admin.setNombreCompleto("Administrador");
+            admin.setActivo(true);
+            admin.setDebeCambiarPassword(true); // obliga a cambiar la contraseña inicial al primer ingreso
             usuarioRepository.save(admin);
             log.warn("Se creó el usuario inicial '{}'. Cambia ADMIN_PASSWORD antes de usar esto fuera de desarrollo.", adminUsername);
         }
     }
 
-    private void sembrarRegimen(String nombre, int diasVacaciones, String factorLiquidacion) {
-        boolean existe = regimenRepository.findAll().stream().anyMatch(r -> nombre.equals(r.getNombre()));
-        if (existe) return;
+    private void sembrarRegimen(String nombre, int diasVacaciones, String factorLiquidacion, boolean asignacionFamiliar) {
+        RegimenLaboral existente = regimenRepository.findAll().stream()
+                .filter(r -> nombre.equals(r.getNombre())).findFirst().orElse(null);
+        if (existente != null) {
+            // Regímenes creados antes de existir la columna: se completa sin tocar lo demás
+            if (existente.getAsignacionFamiliar() == null) {
+                existente.setAsignacionFamiliar(asignacionFamiliar);
+                regimenRepository.save(existente);
+            }
+            return;
+        }
         RegimenLaboral r = new RegimenLaboral();
         r.setNombre(nombre);
         r.setDiasVacaciones(diasVacaciones);
         r.setFactorLiquidacion(new BigDecimal(factorLiquidacion));
+        r.setAsignacionFamiliar(asignacionFamiliar);
         regimenRepository.save(r);
+    }
+
+    /** Tabla del comunicado de tardanzas (entrada 9:00). Los tramos son minutos de atraso. */
+    private void sembrarReglasTardanza() {
+        if (reglaTardanzaRepository.count() > 0) return;
+        reglaTardanza(1, 1, 20, ReglaTardanza.MONTO, "7.00", "De 9:01 a 9:20");
+        reglaTardanza(2, 21, 60, ReglaTardanza.MONTO, "15.00", "De 9:21 a 10:00");
+        reglaTardanza(3, 61, 100, ReglaTardanza.MEDIO_DIA, null, "De 10:01 a 10:40: medio día");
+    }
+
+    private void reglaTardanza(int orden, int desde, Integer hasta, String tipo, String monto, String descripcion) {
+        ReglaTardanza r = new ReglaTardanza();
+        r.setOrden(orden);
+        r.setDesdeMinuto(desde);
+        r.setHastaMinuto(hasta);
+        r.setTipo(tipo);
+        r.setMonto(monto == null ? null : new BigDecimal(monto));
+        r.setDescripcion(descripcion);
+        reglaTardanzaRepository.save(r);
+    }
+
+    /** Feriados nacionales 2026 (16). Fuente: calendario publicado en prensa; confirmar y ajustar con /api/feriados. */
+    private void sembrarFeriados2026() {
+        if (!feriadoRepository.findByFechaBetweenOrderByFecha(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)).isEmpty()) return;
+        feriado(1, 1, "Año Nuevo");
+        feriado(4, 2, "Jueves Santo");
+        feriado(4, 3, "Viernes Santo");
+        feriado(5, 1, "Día del Trabajo");
+        feriado(6, 7, "Batalla de Arica y Día de la Bandera");
+        feriado(6, 29, "San Pedro y San Pablo");
+        feriado(7, 23, "Día de la Fuerza Aérea del Perú");
+        feriado(7, 28, "Fiestas Patrias");
+        feriado(7, 29, "Fiestas Patrias");
+        feriado(8, 6, "Batalla de Junín");
+        feriado(8, 30, "Santa Rosa de Lima");
+        feriado(10, 8, "Combate de Angamos");
+        feriado(11, 1, "Todos los Santos");
+        feriado(12, 8, "Inmaculada Concepción");
+        feriado(12, 9, "Batalla de Ayacucho");
+        feriado(12, 25, "Navidad");
+    }
+
+    private void feriado(int mes, int dia, String nombre) {
+        Feriado f = new Feriado();
+        f.setFecha(LocalDate.of(2026, mes, dia));
+        f.setNombre(nombre);
+        feriadoRepository.save(f);
     }
 
     private void sembrarConcepto(String codigo, String descripcion, String tipo, boolean afectaRenta5ta, boolean afectaEssalud) {

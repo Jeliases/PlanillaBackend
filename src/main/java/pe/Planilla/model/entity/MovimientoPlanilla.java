@@ -1,10 +1,12 @@
 package pe.Planilla.model.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 import lombok.Data;
 import java.math.BigDecimal;
 
 @Data
+@Audited
 @Entity
 @Table(name = "movimiento_planilla")
 public class MovimientoPlanilla {

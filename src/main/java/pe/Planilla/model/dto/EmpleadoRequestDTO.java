@@ -10,6 +10,7 @@ public class EmpleadoRequestDTO {
     private String nombres;
     private String apellidos;
     private String dni;           // número del documento de identidad
+    private String idMarcador;    // ID en el reloj biométrico, si es distinto al documento
     private LocalDate fechaNacimiento;
     private LocalDate fechaIngreso;
     private String cargo;
@@ -25,5 +26,6 @@ public class EmpleadoRequestDTO {
     private String sistemaPensionario; // "ONP" (por defecto) o "AFP"
     private Integer idAfp;             // obligatorio si el sistema es AFP
     private String cuspp;
+    private String tipoComisionAfp;    // FLUJO (por defecto) o MIXTA (no paga comisión por flujo)
     private Boolean asignacionFamiliar;
 }

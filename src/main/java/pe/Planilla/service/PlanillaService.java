@@ -1,6 +1,7 @@
 package pe.Planilla.service;
 
 import pe.Planilla.model.dto.BoletaGeneradaDTO;
+import pe.Planilla.model.entity.PlanillaCabecera;
 
 import java.util.List;
 
@@ -12,4 +13,15 @@ public interface PlanillaService {
     List<BoletaGeneradaDTO> procesarPlanilla(String periodo);
 
     List<BoletaGeneradaDTO> listarBoletas(String periodo);
+
+    BoletaGeneradaDTO obtenerBoleta(Integer idBoleta);
+
+    /** Estado del periodo (BORRADOR/CERRADA, fecha de pago). Null si todavía no se procesó. */
+    PlanillaCabecera estadoPlanilla(String periodo);
+
+    /** Cierra el periodo: ya no se puede recalcular ni registrar movimientos. */
+    PlanillaCabecera cerrar(String periodo, String usuario);
+
+    /** Reabre con autorización (se guarda quién y por qué). */
+    PlanillaCabecera reabrir(String periodo, String usuario, String motivo);
 }

@@ -20,9 +20,15 @@ public interface AsistenciaDiariaRepository extends JpaRepository<AsistenciaDiar
     // Un empleado tiene a lo sumo un registro por día
     Optional<AsistenciaDiaria> findFirstByEmpleado_IdEmpleadoAndFecha(Integer idEmpleado, LocalDate fecha);
 
-    // Cantidad de días con un estado en un rango (faltas del mes o del semestre)
+    // Cantidad de días con un estado en un rango (todas, justificadas o no)
     long countByEmpleado_IdEmpleadoAndEstadoAndFechaBetween(Integer idEmpleado, String estado, LocalDate desde, LocalDate hasta);
+
+    // Faltas que sí se descuentan: las justificadas con documentación no cuentan
+    long countByEmpleado_IdEmpleadoAndEstadoAndJustificadaFalseAndFechaBetween(Integer idEmpleado, String estado, LocalDate desde, LocalDate hasta);
 
     // Todas las asistencias del rango (pantalla de tareo del mes)
     List<AsistenciaDiaria> findByFechaBetweenOrderByFechaDescIdAsistenciaDesc(LocalDate desde, LocalDate hasta);
+
+    // Registros de un conjunto de empleados en un rango (para actualizar al importar el reloj)
+    List<AsistenciaDiaria> findByFechaBetween(LocalDate desde, LocalDate hasta);
 }

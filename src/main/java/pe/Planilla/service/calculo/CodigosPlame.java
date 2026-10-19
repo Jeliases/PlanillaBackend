@@ -19,6 +19,10 @@ public final class CodigosPlame {
     public static final String VACACIONES = "0118";
     public static final String GRATIFICACION = "0406";
     public static final String BONIF_EXTRAORDINARIA = "0312";
+    // Liquidación (cese): verificados en la Tabla 22
+    public static final String VACACIONES_TRUNCAS = "0114";
+    public static final String GRATIFICACION_PROPORCIONAL = "0407";
+    public static final String BONIF_EXTRAORDINARIA_PROPORCIONAL = "0313";
 
     // Descuentos / tributos del trabajador
     public static final String AFP_COMISION = "0601";

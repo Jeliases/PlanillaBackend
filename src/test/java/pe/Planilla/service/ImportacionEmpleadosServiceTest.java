@@ -36,7 +36,7 @@ class ImportacionEmpleadosServiceTest {
 
     private static final String[] COLS = {"tipo_documento", "numero_documento", "nombres", "apellidos", "fecha_nacimiento",
             "fecha_ingreso", "cargo", "area", "correo", "telefono", "sueldo_base", "regimen", "sistema_pensionario", "afp",
-            "cuspp", "asignacion_familiar", "banco", "cuenta_bancaria", "banco_cts", "cuenta_cts"};
+            "cuspp", "tipo_comision_afp", "asignacion_familiar", "banco", "cuenta_bancaria", "banco_cts", "cuenta_cts", "id_marcador"};
 
     private EmpleadoRepository empleadoRepo;
     private ImportacionEmpleadosService servicio;
@@ -107,7 +107,7 @@ class ImportacionEmpleadosServiceTest {
 
     // tipo, numero, nombres, apellidos, nacimiento, ingreso, cargo, area, correo, telefono, sueldo, regimen, sistema, afp, cuspp, asig, banco, cuenta, bancoCts, cuentaCts
     private Object[] fila(Object tipo, Object numero, Object ingreso, Object sueldo, Object regimen, Object sistema, Object afp) {
-        return new Object[]{tipo, numero, "Nombre", "Apellido", null, ingreso, "Asesor", null, null, null, sueldo, regimen, sistema, afp, null, "SI", null, null, null, null};
+        return new Object[]{tipo, numero, "Nombre", "Apellido", null, ingreso, "Asesor", null, null, null, sueldo, regimen, sistema, afp, null, null, "SI", null, null, null, null};
     }
 
     // ------------------------------------------------------------------ plantilla
@@ -122,7 +122,7 @@ class ImportacionEmpleadosServiceTest {
             Row cab = libro.getSheet("Empleados").getRow(0);
             assertEquals(COLS.length, cab.getLastCellNum());
             assertEquals("numero_documento", cab.getCell(1).getStringCellValue());
-            assertEquals(5, libro.getSheet("Empleados").getDataValidations().size()); // tipo doc, régimen, AFP, sistema, asig. familiar
+            assertEquals(6, libro.getSheet("Empleados").getDataValidations().size()); // tipo doc, régimen, AFP, sistema, asig. familiar, comisión
             assertEquals("Régimen General", libro.getSheet("Listas").getRow(1).getCell(1).getStringCellValue());
             // sin fila de ejemplo: nadie debe importar datos falsos por descuido
             assertEquals(0, libro.getSheet("Empleados").getLastRowNum());
@@ -229,12 +229,13 @@ class ImportacionEmpleadosServiceTest {
         assertEquals(TipoDocumento.DNI, TipoDocumento.desdeTexto(" dni "));
         assertEquals(TipoDocumento.CE, TipoDocumento.desdeTexto("Carné de Extranjería"));
         assertEquals(TipoDocumento.CE, TipoDocumento.desdeTexto("04"));
-        assertEquals(TipoDocumento.PASAPORTE, TipoDocumento.desdeTexto("pasaporte"));
-        assertEquals("23", TipoDocumento.PTP.getCodigoSunat());
+        assertEquals("04", TipoDocumento.CE.getCodigoSunat());
         assertNull(TipoDocumento.DNI.validarNumero("12345678"));
         assertNotNull(TipoDocumento.DNI.validarNumero("1234567"));
         assertNull(TipoDocumento.CE.validarNumero("A12345678"));
-        assertNotNull(TipoDocumento.PASAPORTE.validarNumero("12 34"));
+        assertNotNull(TipoDocumento.CE.validarNumero("12 34"));
+        // La empresa solo admite DNI y carné de extranjería
+        assertThrows(RuntimeException.class, () -> TipoDocumento.desdeTexto("pasaporte"));
         assertThrows(RuntimeException.class, () -> TipoDocumento.desdeTexto("libreta"));
     }
 }

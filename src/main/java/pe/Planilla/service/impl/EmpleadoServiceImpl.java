@@ -56,6 +56,87 @@ public class EmpleadoServiceImpl implements EmpleadoService {
 
     @Override
     public Empleado construirEmpleado(EmpleadoRequestDTO dto) {
+        return construir(dto, new Empleado());
+    }
+
+    @Override
+    @Transactional
+    public EmpleadoResponseDTO actualizar(Integer id, EmpleadoRequestDTO dto) {
+        Empleado existente = empleadoRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Empleado no encontrado."));
+        // Los campos que no vienen se conservan: así la pantalla puede mandar solo lo que cambió
+        EmpleadoRequestDTO completo = fusionar(existente, dto);
+        Empleado actualizado = construir(completo, existente);
+        EmpleadoResponseDTO salida = aDTO(empleadoRepository.save(actualizado));
+        notificador.publicar("empleados", "ACTUALIZADO", salida.getIdEmpleado(), salida);
+        return salida;
+    }
+
+    @Override
+    @Transactional
+    public EmpleadoResponseDTO cesar(Integer id, LocalDate fechaCese, String motivo) {
+        Empleado e = empleadoRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Empleado no encontrado."));
+        if (fechaCese == null) {
+            throw new RuntimeException("Indique la fecha de cese (último día trabajado).");
+        }
+        if (e.getFechaIngreso() != null && fechaCese.isBefore(e.getFechaIngreso())) {
+            throw new RuntimeException("La fecha de cese no puede ser anterior al ingreso (" + e.getFechaIngreso() + ").");
+        }
+        e.setEstado("CESADO");
+        e.setFechaCese(fechaCese);
+        e.setMotivoCese(limpiar(motivo));
+        EmpleadoResponseDTO salida = aDTO(empleadoRepository.save(e));
+        notificador.publicar("empleados", "ACTUALIZADO", salida.getIdEmpleado(), salida);
+        return salida;
+    }
+
+    @Override
+    @Transactional
+    public EmpleadoResponseDTO reactivar(Integer id) {
+        Empleado e = empleadoRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Empleado no encontrado."));
+        e.setEstado("ACTIVO");
+        e.setFechaCese(null);
+        e.setMotivoCese(null);
+        EmpleadoResponseDTO salida = aDTO(empleadoRepository.save(e));
+        notificador.publicar("empleados", "ACTUALIZADO", salida.getIdEmpleado(), salida);
+        return salida;
+    }
+
+    /** Rellena en el DTO los campos vacíos con los valores que ya tiene el empleado. */
+    private EmpleadoRequestDTO fusionar(Empleado e, EmpleadoRequestDTO dto) {
+        EmpleadoRequestDTO f = new EmpleadoRequestDTO();
+        f.setTipoDocumento(esVacio(dto.getTipoDocumento()) ? e.getTipoDocumento() : dto.getTipoDocumento());
+        f.setDni(esVacio(dto.getDni()) ? e.getDni() : dto.getDni());
+        f.setIdMarcador(dto.getIdMarcador() != null ? dto.getIdMarcador() : e.getIdMarcador());
+        f.setNombres(esVacio(dto.getNombres()) ? e.getNombres() : dto.getNombres());
+        f.setApellidos(esVacio(dto.getApellidos()) ? e.getApellidos() : dto.getApellidos());
+        f.setFechaNacimiento(dto.getFechaNacimiento() != null ? dto.getFechaNacimiento() : e.getFechaNacimiento());
+        f.setFechaIngreso(dto.getFechaIngreso() != null ? dto.getFechaIngreso() : e.getFechaIngreso());
+        f.setCargo(dto.getCargo() != null ? dto.getCargo() : e.getCargo());
+        f.setArea(dto.getArea() != null ? dto.getArea() : e.getArea());
+        f.setCorreo(dto.getCorreo() != null ? dto.getCorreo() : e.getCorreo());
+        f.setTelefono(dto.getTelefono() != null ? dto.getTelefono() : e.getTelefono());
+        f.setSueldoBase(dto.getSueldoBase() != null ? dto.getSueldoBase() : e.getSueldoBase());
+        f.setBanco(dto.getBanco() != null ? dto.getBanco() : e.getBanco());
+        f.setCuentaBancaria(dto.getCuentaBancaria() != null ? dto.getCuentaBancaria() : e.getCuentaBancaria());
+        f.setBancoCts(dto.getBancoCts() != null ? dto.getBancoCts() : e.getBancoCts());
+        f.setCuentaCts(dto.getCuentaCts() != null ? dto.getCuentaCts() : e.getCuentaCts());
+        f.setIdRegimen(dto.getIdRegimen() != null ? dto.getIdRegimen() : (e.getRegimenLaboral() != null ? e.getRegimenLaboral().getIdRegimen() : null));
+        f.setSistemaPensionario(esVacio(dto.getSistemaPensionario()) ? e.getSistemaPensionario() : dto.getSistemaPensionario());
+        boolean cambiaSistema = !esVacio(dto.getSistemaPensionario()) && !dto.getSistemaPensionario().trim().equalsIgnoreCase(e.getSistemaPensionario());
+        f.setIdAfp(dto.getIdAfp() != null ? dto.getIdAfp() : (cambiaSistema ? null : (e.getAfp() != null ? e.getAfp().getIdAfp() : null)));
+        f.setCuspp(dto.getCuspp() != null ? dto.getCuspp() : e.getCuspp());
+        f.setTipoComisionAfp(esVacio(dto.getTipoComisionAfp()) ? e.getTipoComisionAfp() : dto.getTipoComisionAfp());
+        f.setAsignacionFamiliar(dto.getAsignacionFamiliar() != null ? dto.getAsignacionFamiliar() : e.getAsignacionFamiliar());
+        return f;
+    }
+
+    /** Valida el DTO completo y vuelca los datos en {@code empleado} (nuevo o existente). */
+    private Empleado construir(EmpleadoRequestDTO dto, Empleado empleado) {
+        Integer idActual = empleado.getIdEmpleado(); // null si es nuevo
+
         // --- Identidad
         TipoDocumento tipo = TipoDocumento.desdeTexto(dto.getTipoDocumento());
         String numero = dto.getDni() == null ? null : dto.getDni().trim();
@@ -63,10 +144,17 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         if (errorNumero != null) {
             throw new RuntimeException(errorNumero);
         }
+        // "Otro" empleado = uno con distinto id (al crear, idActual es null: cualquiera existente es otro)
         boolean repetido = empleadoRepository.findAllByDni(numero).stream()
+                .filter(e -> idActual == null || !idActual.equals(e.getIdEmpleado()))
                 .anyMatch(e -> TipoDocumento.desdeTexto(e.getTipoDocumento()) == tipo);
         if (repetido) {
             throw new RuntimeException("Ya existe un empleado con " + tipo.getEtiqueta() + " " + numero + ".");
+        }
+        String idMarcador = limpiar(dto.getIdMarcador());
+        if (idMarcador != null && empleadoRepository.findFirstByIdMarcador(idMarcador)
+                .filter(e -> idActual == null || !idActual.equals(e.getIdEmpleado())).isPresent()) {
+            throw new RuntimeException("El ID del marcador " + idMarcador + " ya lo usa otro empleado.");
         }
         if (esVacio(dto.getNombres()) || esVacio(dto.getApellidos())) {
             throw new RuntimeException("Los nombres y apellidos son obligatorios.");
@@ -109,10 +197,18 @@ public class EmpleadoServiceImpl implements EmpleadoService {
             afp = afpRepository.findById(dto.getIdAfp())
                     .orElseThrow(() -> new RuntimeException("AFP no encontrada."));
         }
+        // Comisión AFP: FLUJO por defecto; MIXTA no paga comisión por flujo (solo 10% + prima)
+        String tipoComision = null;
+        if (sistema.equals("AFP")) {
+            tipoComision = esVacio(dto.getTipoComisionAfp()) ? "FLUJO" : dto.getTipoComisionAfp().trim().toUpperCase();
+            if (!tipoComision.equals("FLUJO") && !tipoComision.equals("MIXTA")) {
+                throw new RuntimeException("El tipo de comisión AFP debe ser FLUJO o MIXTA.");
+            }
+        }
 
-        Empleado empleado = new Empleado();
         empleado.setTipoDocumento(tipo.name());
         empleado.setDni(numero);
+        empleado.setIdMarcador(idMarcador);
         empleado.setNombres(dto.getNombres().trim());
         empleado.setApellidos(dto.getApellidos().trim());
         empleado.setFechaNacimiento(dto.getFechaNacimiento());
@@ -130,8 +226,9 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         empleado.setSistemaPensionario(sistema);
         empleado.setAfp(afp);
         empleado.setCuspp(sistema.equals("AFP") ? limpiar(dto.getCuspp()) : null);
+        empleado.setTipoComisionAfp(tipoComision);
         empleado.setAsignacionFamiliar(Boolean.TRUE.equals(dto.getAsignacionFamiliar()));
-        empleado.setEstado("ACTIVO");
+        if (empleado.getEstado() == null) empleado.setEstado("ACTIVO"); // un cesado editado sigue cesado
         return empleado;
     }
 
@@ -149,6 +246,7 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         dto.setTipoDocumento(e.getTipoDocumento() != null ? e.getTipoDocumento() : TipoDocumento.DNI.name());
         dto.setNombresCompletos(e.getNombres() + " " + e.getApellidos());
         dto.setDni(e.getDni());
+        dto.setIdMarcador(e.getIdMarcador());
         dto.setFechaNacimiento(e.getFechaNacimiento());
         dto.setFechaIngreso(e.getFechaIngreso());
         dto.setCargo(e.getCargo());
@@ -165,6 +263,9 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         dto.setSistemaPensionario(e.getSistemaPensionario() != null ? e.getSistemaPensionario() : "ONP");
         dto.setAfp(e.getAfp() != null ? e.getAfp().getNombre() : null);
         dto.setCuspp(e.getCuspp());
+        dto.setTipoComisionAfp(e.getTipoComisionAfp());
+        dto.setFechaCese(e.getFechaCese());
+        dto.setMotivoCese(e.getMotivoCese());
         dto.setAsignacionFamiliar(Boolean.TRUE.equals(e.getAsignacionFamiliar()));
         return dto;
     }

@@ -3,16 +3,13 @@ package pe.Planilla.model;
 import java.text.Normalizer;
 
 /**
- * Tipos de documento de identidad del trabajador. El código SUNAT sale en el archivo PLAME.
- * Códigos tomados de la especificación de planillas electrónicas de SUNAT (01 DNI, 04 CE, 07 Pasaporte,
- * 09 Solicitante de refugio, 23 PTP): confirmarlos contra la Tabla 2 del T-Registro vigente.
+ * Tipos de documento de identidad del trabajador. Por decisión de la empresa solo se admiten DNI peruano y
+ * carné de extranjería. El código SUNAT sale en el archivo PLAME (01 DNI, 04 CE según la especificación de
+ * planillas electrónicas de SUNAT; confirmar con la Tabla 2 del T-Registro).
  */
 public enum TipoDocumento {
     DNI("01", "DNI"),
-    CE("04", "Carné de extranjería"),
-    PASAPORTE("07", "Pasaporte"),
-    PTP("23", "Carné PTP"),
-    CSR("09", "Carné de solicitante de refugio");
+    CE("04", "Carné de extranjería");
 
     private final String codigoSunat;
     private final String etiqueta;
@@ -52,11 +49,7 @@ public enum TipoDocumento {
         return switch (clave) {
             case "DNI", "01" -> DNI;
             case "CE", "04", "CARNETDEEXTRANJERIA", "CARNEDEEXTRANJERIA" -> CE;
-            case "PASAPORTE", "07" -> PASAPORTE;
-            case "PTP", "23", "CARNEPTP", "PERMISOTEMPORALDEPERMANENCIA" -> PTP;
-            case "CSR", "09", "CARNEDESOLICITANTEDEREFUGIO" -> CSR;
-            default -> throw new RuntimeException("Tipo de documento no válido: «" + texto.trim()
-                    + "». Use DNI, CE, PASAPORTE, PTP o CSR.");
+            default -> throw new RuntimeException("Tipo de documento no válido: «" + texto.trim() + "». Use DNI o CE.");
         };
     }
 }

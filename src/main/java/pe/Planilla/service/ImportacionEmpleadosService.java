@@ -64,11 +64,13 @@ public class ImportacionEmpleadosService {
             new Columna("sistema_pensionario", false, "ONP o AFP. Vacío = ONP (o AFP si indica una AFP).", "AFP"),
             new Columna("afp", false, "Obligatoria si es AFP. Elija de la lista.", "Habitat"),
             new Columna("cuspp", false, "Código CUSPP de la AFP (opcional).", "649871AFMRQ2"),
+            new Columna("tipo_comision_afp", false, "FLUJO (por defecto) o MIXTA. La mixta no paga comisión por flujo: solo 10% + prima.", "FLUJO"),
             new Columna("asignacion_familiar", false, "SI o NO. Vacío = NO.", "NO"),
             new Columna("banco", false, "Banco donde se deposita el sueldo.", "BCP"),
             new Columna("cuenta_bancaria", false, "Número de cuenta o CCI del sueldo.", "19412345678901"),
             new Columna("banco_cts", false, "Banco donde se deposita la CTS.", "Interbank"),
-            new Columna("cuenta_cts", false, "Número de cuenta de la CTS.", "8983001234567")
+            new Columna("cuenta_cts", false, "Número de cuenta de la CTS.", "8983001234567"),
+            new Columna("id_marcador", false, "ID con el que marca en el reloj biométrico, si es distinto al documento (ej. 10).", "10")
     );
 
     // Otros nombres que se aceptan para las columnas (el usuario puede escribir "DNI" en vez de numero_documento)
@@ -159,6 +161,7 @@ public class ImportacionEmpleadosService {
             }
             agregarLista(hoja, dv, indice("sistema_pensionario"), dv.createExplicitListConstraint(new String[]{"ONP", "AFP"}));
             agregarLista(hoja, dv, indice("asignacion_familiar"), dv.createExplicitListConstraint(new String[]{"SI", "NO"}));
+            agregarLista(hoja, dv, indice("tipo_comision_afp"), dv.createExplicitListConstraint(new String[]{"FLUJO", "MIXTA"}));
 
             // --- instrucciones
             int f = 0;
@@ -346,7 +349,9 @@ public class ImportacionEmpleadosService {
         dto.setCuentaBancaria(textoNumerico(fila, col, "cuentabancaria", fmt));
         dto.setBancoCts(texto(fila, col, "bancocts", fmt));
         dto.setCuentaCts(textoNumerico(fila, col, "cuentacts", fmt));
+        dto.setIdMarcador(textoNumerico(fila, col, "idmarcador", fmt));
         dto.setCuspp(texto(fila, col, "cuspp", fmt));
+        dto.setTipoComisionAfp(texto(fila, col, "tipocomisionafp", fmt));
 
         // Régimen: por nombre
         String nombreRegimen = texto(fila, col, "regimen", fmt);

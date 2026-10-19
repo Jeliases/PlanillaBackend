@@ -1,9 +1,11 @@
 package pe.Planilla.model.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 import lombok.Data;
 
 @Data
+@Audited
 @Entity
 @Table(name = "concepto_remunerativo")
 public class ConceptoRemunerativo {

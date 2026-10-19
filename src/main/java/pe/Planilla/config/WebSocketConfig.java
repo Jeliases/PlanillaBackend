@@ -50,7 +50,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         String[] origenes = Arrays.stream(allowedOrigins.split(",")).map(String::trim).toArray(String[]::new);
-        registry.addEndpoint("/ws").setAllowedOrigins(origenes);
+        registry.addEndpoint("/ws").setAllowedOriginPatterns(origenes); // admite comodines: https://*.trycloudflare.com
     }
 
     @Override

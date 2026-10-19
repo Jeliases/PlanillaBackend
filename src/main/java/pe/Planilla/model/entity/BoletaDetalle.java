@@ -1,6 +1,7 @@
 package pe.Planilla.model.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
@@ -9,6 +10,7 @@ import java.math.BigDecimal;
 
 /** Una línea de la boleta: cada ingreso, descuento o aporte con su código SUNAT (si lo tiene). */
 @Data
+@Audited
 @Entity
 @Table(name = "boleta_detalle")
 public class BoletaDetalle {

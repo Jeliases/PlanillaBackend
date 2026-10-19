@@ -13,6 +13,8 @@ import pe.Planilla.service.AsistenciaService;
 import pe.Planilla.service.PlanillaService;
 import pe.Planilla.service.RentaQuintaService;
 import pe.Planilla.service.RentaQuintaService.DatosRenta5ta;
+import pe.Planilla.service.calculo.CalculadoraAsistencia;
+import pe.Planilla.service.calculo.CalculadoraAsistencia.DescuentoTardanzas;
 import pe.Planilla.service.calculo.CalculadoraPlanilla;
 import pe.Planilla.service.calculo.CalculadoraPlanilla.Cts;
 import pe.Planilla.service.calculo.CalculadoraPlanilla.Gratificacion;
@@ -44,6 +46,8 @@ public class PlanillaServiceImpl implements PlanillaService {
     private final AsistenciaService asistenciaService;
     private final RentaQuintaService rentaQuintaService;
     private final CalculadoraPlanilla calculadora;
+    private final CalculadoraAsistencia calculadoraAsistencia;
+    private final ReglaTardanzaRepository reglaTardanzaRepository;
     private final PlanillaProperties props;
     private final NotificadorTiempoReal notificador;
 
@@ -64,6 +68,9 @@ public class PlanillaServiceImpl implements PlanillaService {
         if (empleado.getFechaIngreso() != null && empleado.getFechaIngreso().isAfter(finMes)) {
             throw new RuntimeException("El empleado ingresó el " + empleado.getFechaIngreso() + ", después del periodo " + periodo + ".");
         }
+        if (empleado.getFechaCese() != null && empleado.getFechaCese().isBefore(inicioMes)) {
+            throw new RuntimeException("El empleado cesó el " + empleado.getFechaCese() + ", antes del periodo " + periodo + ".");
+        }
 
         // 1. Planilla cabecera del mes
         PlanillaCabecera planilla = planillaRepository.findByPeriodo(periodo)
@@ -82,13 +89,13 @@ public class PlanillaServiceImpl implements PlanillaService {
         BigDecimal factor = regimen.getFactorLiquidacion() != null ? regimen.getFactorLiquidacion() : BigDecimal.ONE;
 
         // 2. Días: 30 comerciales, menos faltas injustificadas y días de vacaciones (que se pagan como movimiento)
-        long faltas = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndFechaBetween(idEmpleado, "FALTA", inicioMes, finMes);
+        long faltas = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndJustificadaFalseAndFechaBetween(idEmpleado, "FALTA", inicioMes, finMes);
         List<MovimientoPlanilla> movimientos = movimientoRepository.findByEmpleado_IdEmpleadoAndPeriodo(idEmpleado, periodo);
         int diasVacaciones = movimientos.stream()
                 .filter(m -> CodigosPlame.VACACIONES.equals(m.getConcepto().getCodigo()))
                 .mapToInt(m -> m.getCantidad() != null ? m.getCantidad() : 0)
                 .sum();
-        int diasPeriodo = calculadora.diasDelPeriodo(empleado.getFechaIngreso(), ym);
+        int diasPeriodo = calculadora.diasDelPeriodo(empleado.getFechaIngreso(), empleado.getFechaCese(), ym);
         int diasPagados = calculadora.diasPagados(diasPeriodo, faltas, diasVacaciones);
 
         List<BoletaDetalle> lineas = new ArrayList<>();
@@ -99,7 +106,9 @@ public class PlanillaServiceImpl implements PlanillaService {
 
         BigDecimal asignacionMensual = BigDecimal.ZERO;
         BigDecimal asignacionPagada = BigDecimal.ZERO;
-        if (dependiente && Boolean.TRUE.equals(empleado.getAsignacionFamiliar())) {
+        // Asignación familiar: el empleado la tiene marcada Y su régimen la paga (solo el Régimen General)
+        if (dependiente && Boolean.TRUE.equals(empleado.getAsignacionFamiliar())
+                && Boolean.TRUE.equals(regimen.getAsignacionFamiliar())) {
             asignacionMensual = calculadora.asignacionFamiliarMensual();
             asignacionPagada = calculadora.prorratear(asignacionMensual, diasPagados);
             agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.ASIGNACION_FAMILIAR, "Asignación familiar", asignacionPagada);
@@ -116,6 +125,22 @@ public class PlanillaServiceImpl implements PlanillaService {
             }
         }
 
+        // Horas extras autorizadas en la asistencia (las 2 primeras de cada día al 25%, el resto al 35%), sobre el básico
+        int[] he = asistenciaService.horasExtraAutorizadasDelMes(idEmpleado, mes, anio);
+        if (he[0] + he[1] > 0) {
+            BigDecimal valorHora = empleado.getSueldoBase().divide(new BigDecimal("240"), 4, RoundingMode.HALF_UP); // /30 días /8 horas
+            if (he[0] > 0) {
+                BigDecimal m25 = valorHora.multiply(new BigDecimal("1.25")).multiply(new BigDecimal(he[0])).setScale(2, RoundingMode.HALF_UP);
+                agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.HORAS_EXTRAS_25, "Horas extras 25% (" + he[0] + " h, asistencia)", m25);
+                ingresosMovimientos = ingresosMovimientos.add(m25);
+            }
+            if (he[1] > 0) {
+                BigDecimal m35 = valorHora.multiply(new BigDecimal("1.35")).multiply(new BigDecimal(he[1])).setScale(2, RoundingMode.HALF_UP);
+                agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.HORAS_EXTRAS_35, "Horas extras 35% (" + he[1] + " h, asistencia)", m35);
+                ingresosMovimientos = ingresosMovimientos.add(m35);
+            }
+        }
+
         // Remuneración sobre la que se aporta a pensiones y EsSalud (la gratificación NO entra: es inafecta)
         BigDecimal baseAfecta = sueldoPagado.add(asignacionPagada).add(ingresosMovimientos);
 
@@ -123,7 +148,7 @@ public class PlanillaServiceImpl implements PlanillaService {
         BigDecimal fijaMensual = empleado.getSueldoBase().add(asignacionMensual);
         if (dependiente && (mes == 7 || mes == 12)) {
             int meses = calculadora.mesesComputablesGratificacion(empleado.getFechaIngreso(), ym);
-            long faltasSemestre = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndFechaBetween(idEmpleado, "FALTA",
+            long faltasSemestre = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndJustificadaFalseAndFechaBetween(idEmpleado, "FALTA",
                     calculadora.inicioSemestreGratificacion(ym), calculadora.finSemestreGratificacion(ym));
             Gratificacion g = calculadora.gratificacion(fijaMensual, factor, meses, faltasSemestre);
             if (g.neta().signum() > 0) {
@@ -136,20 +161,22 @@ public class PlanillaServiceImpl implements PlanillaService {
         }
 
         // 5. DESCUENTOS: tardanzas, pensión (ONP/AFP) y Renta de 5ta
-        int minutosTardanza = asistenciaService.calcularTotalMinutosTardanzaMes(idEmpleado, mes, anio);
-        if (minutosTardanza > 0) {
-            // sueldo / 30 días / 8 horas / 60 minutos, redondeando una sola vez
-            BigDecimal descuentoTardanza = empleado.getSueldoBase().multiply(new BigDecimal(minutosTardanza))
-                    .divide(new BigDecimal("14400"), 2, RoundingMode.HALF_UP);
-            agregar(lineas, BoletaDetalle.DESCUENTO, null, "Tardanzas (" + minutosTardanza + " min)", descuentoTardanza);
-        }
+        // Tardanzas: tabla del comunicado de la empresa (monto fijo por tramo o medio día) y un día adicional
+        // al llegar a N tardanzas en el mes. Las tardanzas justificadas con documentación no se descuentan.
+        List<Integer> tardanzas = asistenciaService.minutosTardanzaInjustificadaDelMes(idEmpleado, mes, anio);
+        DescuentoTardanzas dt = calculadoraAsistencia.descuentoTardanzas(
+                tardanzas, empleado.getSueldoBase(), reglaTardanzaRepository.findAllByOrderByDesdeMinutoAsc());
+        agregar(lineas, BoletaDetalle.DESCUENTO, null, "Descuento por tardanzas (" + dt.cantidad() + ")", dt.montoTramos());
+        agregar(lineas, BoletaDetalle.DESCUENTO, null,
+                "Descuento de 1 día adicional (" + dt.cantidad() + " tardanzas en el mes)", dt.montoDiaAdicional());
 
         BigDecimal renta5ta = BigDecimal.ZERO;
         BigDecimal essaludEmpleador = BigDecimal.ZERO;
         BigDecimal depositoCts = BigDecimal.ZERO;
 
         if (dependiente) {
-            for (LineaPension l : calculadora.pension(empleado.getSistemaPensionario(), empleado.getAfp(), baseAfecta)) {
+            for (LineaPension l : calculadora.pension(empleado.getSistemaPensionario(), empleado.getAfp(),
+                    empleado.getTipoComisionAfp(), baseAfecta)) {
                 agregar(lineas, BoletaDetalle.DESCUENTO, l.codigo(), l.descripcion(), l.monto());
             }
 
@@ -261,7 +288,7 @@ public class PlanillaServiceImpl implements PlanillaService {
         BigDecimal sextoGrati = gratiCompleta.divide(new BigDecimal("6"), 2, RoundingMode.HALF_UP);
         BigDecimal computable = fijaMensual.add(sextoGrati);
 
-        long faltasSemestre = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndFechaBetween(empleado.getIdEmpleado(), "FALTA",
+        long faltasSemestre = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndJustificadaFalseAndFechaBetween(empleado.getIdEmpleado(), "FALTA",
                 calculadora.inicioSemestreCts(ym), calculadora.finSemestreCts(ym));
         Cts cts = calculadora.cts(computable, factor, empleado.getFechaIngreso(), ym, faltasSemestre);
         if (cts.monto().signum() > 0) {
@@ -276,17 +303,74 @@ public class PlanillaServiceImpl implements PlanillaService {
     public List<BoletaGeneradaDTO> procesarPlanilla(String periodo) {
         validarPeriodo(periodo);
         LocalDate finMes = YearMonth.parse(periodo).atEndOfMonth();
-        // Solo empleados activos que ya habían ingresado en el periodo
+        LocalDate inicioMes = YearMonth.parse(periodo).atDay(1);
+        // Empleados que ya habían ingresado en el periodo y que no habían cesado antes de que empiece
+        // (un cesado a mitad de mes sí entra: cobra los días trabajados de ese mes)
         List<Empleado> aProcesar = empleadoRepository.findAll().stream()
-                .filter(e -> "ACTIVO".equals(e.getEstado()))
                 .filter(e -> e.getFechaIngreso() == null || !e.getFechaIngreso().isAfter(finMes))
+                .filter(e -> e.getFechaCese() == null || !e.getFechaCese().isBefore(inicioMes))
                 .toList();
         if (aProcesar.isEmpty()) {
-            throw new RuntimeException("No hay empleados activos para procesar en el periodo " + periodo + ".");
+            throw new RuntimeException("No hay empleados para procesar en el periodo " + periodo + ".");
         }
         return aProcesar.stream()
                 .map(e -> procesarBoletaMensual(e.getIdEmpleado(), periodo))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BoletaGeneradaDTO obtenerBoleta(Integer idBoleta) {
+        return boletaRepository.findById(idBoleta).map(this::convertirADTO)
+                .orElseThrow(() -> new RuntimeException("Boleta no encontrada."));
+    }
+
+    @Override
+    public PlanillaCabecera estadoPlanilla(String periodo) {
+        validarPeriodo(periodo);
+        return planillaRepository.findByPeriodo(periodo).orElse(null);
+    }
+
+    @Override
+    @Transactional
+    public PlanillaCabecera cerrar(String periodo, String usuario) {
+        validarPeriodo(periodo);
+        PlanillaCabecera p = planillaRepository.findByPeriodo(periodo)
+                .orElseThrow(() -> new RuntimeException("La planilla " + periodo + " todavía no se ha procesado."));
+        if (PlanillaCabecera.CERRADA.equals(p.getEstado())) {
+            throw new RuntimeException("La planilla " + periodo + " ya está cerrada.");
+        }
+        if (boletaRepository.findByPlanilla_Periodo(periodo).isEmpty()) {
+            throw new RuntimeException("La planilla " + periodo + " no tiene boletas: procésala antes de cerrarla.");
+        }
+        p.setEstado(PlanillaCabecera.CERRADA);
+        p.setFechaCierre(LocalDate.now());
+        p.setCerradaPor(usuario);
+        if (p.getFechaPago() == null) p.setFechaPago(YearMonth.parse(periodo).atEndOfMonth());
+        PlanillaCabecera guardada = planillaRepository.save(p);
+        notificador.publicar("planillas", "CERRADA", guardada.getIdPlanilla(), guardada);
+        return guardada;
+    }
+
+    @Override
+    @Transactional
+    public PlanillaCabecera reabrir(String periodo, String usuario, String motivo) {
+        validarPeriodo(periodo);
+        if (motivo == null || motivo.isBlank()) {
+            throw new RuntimeException("Indique el motivo y quién autoriza la reapertura (contador y gerencia).");
+        }
+        PlanillaCabecera p = planillaRepository.findByPeriodo(periodo)
+                .orElseThrow(() -> new RuntimeException("La planilla " + periodo + " no existe."));
+        if (!PlanillaCabecera.CERRADA.equals(p.getEstado())) {
+            throw new RuntimeException("La planilla " + periodo + " no está cerrada.");
+        }
+        p.setEstado(PlanillaCabecera.BORRADOR);
+        p.setReabiertaEn(java.time.LocalDateTime.now());
+        p.setReabiertaPor(usuario);
+        p.setMotivoReapertura(motivo.trim());
+        PlanillaCabecera guardada = planillaRepository.save(p);
+        notificador.publicar("planillas", "REABIERTA", guardada.getIdPlanilla(), guardada);
+        return guardada;
     }
 
     @Override

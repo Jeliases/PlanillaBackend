@@ -1,6 +1,7 @@
 package pe.Planilla.model.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -10,6 +11,7 @@ import java.math.BigDecimal;
  * y cambian con el tiempo: se actualizan por PUT /api/afps/{id} según la tabla vigente de la SBS.
  */
 @Data
+@Audited
 @Entity
 @Table(name = "afp")
 public class Afp {

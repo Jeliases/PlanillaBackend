@@ -21,4 +21,13 @@ public interface EmpleadoService {
     List<EmpleadoResponseDTO> guardarLote(List<Empleado> empleados);
 
     EmpleadoResponseDTO aDTO(Empleado empleado);
+
+    /** Edita los datos de un empleado existente (solo los campos que vienen). */
+    EmpleadoResponseDTO actualizar(Integer id, EmpleadoRequestDTO dto);
+
+    /** Registra el cese: desde el mes siguiente deja de entrar en la planilla. */
+    EmpleadoResponseDTO cesar(Integer id, java.time.LocalDate fechaCese, String motivo);
+
+    /** Vuelve a activar a un cesado (por ejemplo, un cese registrado por error). */
+    EmpleadoResponseDTO reactivar(Integer id);
 }

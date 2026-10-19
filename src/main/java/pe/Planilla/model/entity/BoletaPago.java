@@ -1,6 +1,7 @@
 package pe.Planilla.model.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
@@ -10,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Data
+@Audited
 @Entity
 @Table(name = "boleta_pago")
 public class BoletaPago {

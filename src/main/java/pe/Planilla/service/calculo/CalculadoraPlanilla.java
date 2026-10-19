@@ -10,6 +10,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.Period;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -41,9 +42,24 @@ public class CalculadoraPlanilla {
 
     /** Días del mes que corresponde pagar: 30 si ya estaba contratado; proporcional si ingresó durante el mes; 0 si ingresó después. */
     public int diasDelPeriodo(LocalDate fechaIngreso, YearMonth periodo) {
-        if (fechaIngreso == null || !fechaIngreso.isAfter(periodo.atDay(1))) return 30;
-        if (fechaIngreso.isAfter(periodo.atEndOfMonth())) return 0;
-        return Math.min(30, periodo.lengthOfMonth() - fechaIngreso.getDayOfMonth() + 1);
+        return diasDelPeriodo(fechaIngreso, null, periodo);
+    }
+
+    /**
+     * Igual, considerando también el cese: si cesó dentro del mes se pagan los días hasta el cese (mes comercial de 30).
+     * Ejemplo: ingresó antes y cesó el 15 -> 15 días; ingresó el 10 y cesó el 20 -> 11 días.
+     */
+    public int diasDelPeriodo(LocalDate fechaIngreso, LocalDate fechaCese, YearMonth periodo) {
+        LocalDate inicioMes = periodo.atDay(1);
+        LocalDate finMes = periodo.atEndOfMonth();
+        if (fechaIngreso != null && fechaIngreso.isAfter(finMes)) return 0;
+        if (fechaCese != null && fechaCese.isBefore(inicioMes)) return 0;
+        int diaDesde = (fechaIngreso == null || !fechaIngreso.isAfter(inicioMes)) ? 1 : fechaIngreso.getDayOfMonth();
+        int diaHasta = (fechaCese == null || !fechaCese.isBefore(finMes)) ? 30 : Math.min(30, fechaCese.getDayOfMonth());
+        if (diaDesde == 1 && diaHasta == 30) return 30;
+        // Si ingresó, se cuentan los días reales desde el ingreso hasta fin de mes (31 cuenta como 30)
+        if (diaHasta == 30) return Math.min(30, periodo.lengthOfMonth() - diaDesde + 1);
+        return Math.max(0, diaHasta - diaDesde + 1);
     }
 
     /** Días a pagar como sueldo: se restan las faltas injustificadas y los días de vacaciones (que se pagan aparte). */
@@ -65,24 +81,35 @@ public class CalculadoraPlanilla {
 
     // ------------------------------------------------------------ Pensiones
 
-    /** ONP (13%) o AFP (aporte obligatorio + comisión + prima con tope). Se calcula sobre la remuneración asegurable. */
+    /** Igual que {@link #pension(String, Afp, String, BigDecimal)} con comisión por flujo. */
     public List<LineaPension> pension(String sistema, Afp afp, BigDecimal baseAsegurable) {
+        return pension(sistema, afp, "FLUJO", baseAsegurable);
+    }
+
+    /**
+     * ONP (13%) o AFP (aporte obligatorio + prima con tope + comisión). Se calcula sobre la remuneración asegurable.
+     * Con comisión MIXTA no se descuenta comisión: el componente de flujo es 0% y el de saldo lo cobra el fondo.
+     */
+    public List<LineaPension> pension(String sistema, Afp afp, String tipoComision, BigDecimal baseAsegurable) {
         if ("AFP".equals(sistema)) {
             if (afp == null) {
                 throw new RuntimeException("El empleado está en AFP pero no tiene un fondo asignado.");
             }
             BigDecimal tope = afp.getRemuneracionMaximaAsegurable();
             BigDecimal basePrima = tope != null ? baseAsegurable.min(tope) : baseAsegurable;
-            return List.of(
-                    new LineaPension(CodigosPlame.AFP_APORTE,
-                            "AFP " + afp.getNombre() + " - Aporte obligatorio (" + pct(afp.getAporteObligatorio()) + ")",
-                            aplicar(baseAsegurable, afp.getAporteObligatorio())),
-                    new LineaPension(CodigosPlame.AFP_COMISION,
-                            "AFP " + afp.getNombre() + " - Comisión (" + pct(afp.getComisionFlujo()) + ")",
-                            aplicar(baseAsegurable, afp.getComisionFlujo())),
-                    new LineaPension(CodigosPlame.AFP_PRIMA,
-                            "AFP " + afp.getNombre() + " - Prima de seguro (" + pct(afp.getPrimaSeguro()) + ")",
-                            aplicar(basePrima, afp.getPrimaSeguro())));
+            List<LineaPension> lineas = new ArrayList<>();
+            lineas.add(new LineaPension(CodigosPlame.AFP_APORTE,
+                    "AFP " + afp.getNombre() + " - Aporte obligatorio (" + pct(afp.getAporteObligatorio()) + ")",
+                    aplicar(baseAsegurable, afp.getAporteObligatorio())));
+            if (!"MIXTA".equalsIgnoreCase(tipoComision)) {
+                lineas.add(new LineaPension(CodigosPlame.AFP_COMISION,
+                        "AFP " + afp.getNombre() + " - Comisión (" + pct(afp.getComisionFlujo()) + ")",
+                        aplicar(baseAsegurable, afp.getComisionFlujo())));
+            }
+            lineas.add(new LineaPension(CodigosPlame.AFP_PRIMA,
+                    "AFP " + afp.getNombre() + " - Prima de seguro (" + pct(afp.getPrimaSeguro()) + ")",
+                    aplicar(basePrima, afp.getPrimaSeguro())));
+            return lineas;
         }
         return List.of(new LineaPension(CodigosPlame.ONP, "ONP (" + pct(props.getOnpPct()) + ")",
                 aplicar(baseAsegurable, props.getOnpPct())));

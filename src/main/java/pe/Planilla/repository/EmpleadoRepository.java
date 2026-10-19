@@ -14,4 +14,7 @@ public interface EmpleadoRepository extends JpaRepository<Empleado, Integer> {
 
     /** Todos los que comparten ese número de documento (puede coincidir entre un DNI y un CE). */
     List<Empleado> findAllByDni(String dni);
+
+    /** Para no repetir el ID del reloj entre dos trabajadores. */
+    Optional<Empleado> findFirstByIdMarcador(String idMarcador);
 }

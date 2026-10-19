@@ -10,6 +10,7 @@ public class EmpleadoResponseDTO {
     private String tipoDocumento;
     private String nombresCompletos;
     private String dni;            // número del documento de identidad
+    private String idMarcador;     // ID en el reloj biométrico (null = el documento)
     private LocalDate fechaNacimiento;
     private LocalDate fechaIngreso;
     private String cargo;
@@ -26,5 +27,8 @@ public class EmpleadoResponseDTO {
     private String sistemaPensionario;
     private String afp;            // nombre de la AFP (null si es ONP)
     private String cuspp;
+    private String tipoComisionAfp;
     private Boolean asignacionFamiliar;
+    private LocalDate fechaCese;
+    private String motivoCese;
 }

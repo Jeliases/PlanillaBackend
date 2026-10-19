@@ -55,6 +55,25 @@
             <version>5.2.5</version>
         </dependency>
 
+        <!-- Auditoría: historial de cada cambio en las tablas (quién, cuándo, qué) -->
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-envers</artifactId>
+        </dependency>
+
+        <!-- Boletas en PDF -->
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>1.3.43</version>
+        </dependency>
+
+        <!-- Envío de boletas por correo -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- DevTools para recarga rápida -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

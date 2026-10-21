@@ -3,6 +3,7 @@ package pe.Planilla.service.impl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.Planilla.model.dto.FeriadoLaboradoRequestDTO;
 import pe.Planilla.model.dto.HorasExtrasRequestDTO;
 import pe.Planilla.model.dto.MovimientoRequestDTO;
 import pe.Planilla.model.dto.MovimientoResponseDTO;
@@ -17,6 +18,8 @@ import pe.Planilla.repository.ConceptoRemunerativoRepository;
 import pe.Planilla.repository.EmpleadoRepository;
 import pe.Planilla.repository.MovimientoPlanillaRepository;
 import pe.Planilla.service.MovimientoService;
+import pe.Planilla.service.calculo.CalculadoraPlanilla;
+import pe.Planilla.service.calculo.CodigosPlame;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -32,6 +35,7 @@ public class MovimientoServiceImpl implements MovimientoService {
     private final ConceptoRemunerativoRepository conceptoRepository;
     private final PlanillaCabeceraRepository planillaRepository;
     private final NotificadorTiempoReal notificador;
+    private final CalculadoraPlanilla calculadora;
 
     @Override
     public MovimientoResponseDTO registrarBonoOComision(MovimientoRequestDTO dto) {
@@ -63,9 +67,9 @@ public class MovimientoServiceImpl implements MovimientoService {
             throw new RuntimeException("Indique al menos una hora extra (las horas no pueden ser negativas).");
         }
 
-        // Valor de 1 hora normal: sueldo / 30 días / 8 horas (4 decimales para no perder precisión)
-        BigDecimal valorDia = empleado.getSueldoBase().divide(new BigDecimal("30"), 4, RoundingMode.HALF_UP);
-        BigDecimal valorHoraNormal = valorDia.divide(new BigDecimal("8"), 4, RoundingMode.HALF_UP);
+        // Valor de 1 hora normal: básico del mes (según la jornada) / 30 días / horas de la jornada
+        BigDecimal basico = calculadora.basicoMensual(empleado.getSueldoBase(), empleado.getHorasJornada());
+        BigDecimal valorHoraNormal = calculadora.valorHora(basico, empleado.getHorasJornada());
 
         // Un movimiento por tasa, con el código SUNAT de cada una (los crea el DataSeeder)
         List<MovimientoResponseDTO> resultado = new ArrayList<>();
@@ -114,8 +118,9 @@ public class MovimientoServiceImpl implements MovimientoService {
                     " solo permite hasta " + limiteDias + " días de vacaciones.");
         }
 
-        // 2. Matemática estricta: (Sueldo / 30) * diasGozados
-        BigDecimal valorDia = empleado.getSueldoBase().divide(new BigDecimal("30"), 4, RoundingMode.HALF_UP);
+        // 2. Matemática estricta: (básico del mes según la jornada / 30) * diasGozados
+        BigDecimal basico = calculadora.basicoMensual(empleado.getSueldoBase(), empleado.getHorasJornada());
+        BigDecimal valorDia = basico.divide(new BigDecimal("30"), 4, RoundingMode.HALF_UP);
         BigDecimal montoVacaciones = valorDia.multiply(new BigDecimal(dto.getDiasGozados())).setScale(2, RoundingMode.HALF_UP);
 
         // 3. Registrar el movimiento
@@ -126,6 +131,33 @@ public class MovimientoServiceImpl implements MovimientoService {
         movimiento.setMonto(montoVacaciones);
         movimiento.setCantidad(dto.getDiasGozados()); // la planilla descuenta estos días del sueldo para no pagarlos dos veces
 
+        return guardarYNotificar(movimiento);
+    }
+
+    @Override
+    public MovimientoResponseDTO registrarFeriadoLaborado(FeriadoLaboradoRequestDTO dto) {
+        Empleado empleado = empleadoRepository.findById(dto.getIdEmpleado())
+                .orElseThrow(() -> new RuntimeException("Empleado no encontrado."));
+        validarPeriodo(dto.getPeriodo());
+        if (dto.getDias() == null || dto.getDias() <= 0 || dto.getDias() > 31) {
+            throw new RuntimeException("Indique los días trabajados en feriado o descanso (1 a 31).");
+        }
+        ConceptoRemunerativo concepto = conceptoRepository.findByCodigo(CodigosPlame.FERIADO_LABORADO)
+                .orElseThrow(() -> new RuntimeException("El concepto 0107 (trabajo en día feriado) no existe: reinicia el sistema para sembrarlo."));
+
+        // (básico del mes + asignación familiar) / 30 por cada día, como la planilla de la contadora
+        BigDecimal basico = calculadora.basicoMensual(empleado.getSueldoBase(), empleado.getHorasJornada());
+        BigDecimal asignacion = BigDecimal.ZERO;
+        if (Boolean.TRUE.equals(empleado.getAsignacionFamiliar()) && empleado.getRegimenLaboral() != null
+                && Boolean.TRUE.equals(empleado.getRegimenLaboral().getAsignacionFamiliar())) {
+            asignacion = calculadora.asignacionFamiliarMensual();
+        }
+        MovimientoPlanilla movimiento = new MovimientoPlanilla();
+        movimiento.setEmpleado(empleado);
+        movimiento.setConcepto(concepto);
+        movimiento.setPeriodo(dto.getPeriodo());
+        movimiento.setMonto(calculadora.feriadoLaborado(basico.add(asignacion), dto.getDias()));
+        movimiento.setCantidad(dto.getDias());
         return guardarYNotificar(movimiento);
     }
 

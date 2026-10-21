@@ -54,7 +54,8 @@ public class PlameServiceImpl implements PlameService {
     }
 
     private boolean seDeclara(BoletaDetalle linea) {
-        if (linea.getCodigo() == null) return false;
+        // Solo códigos de 4 dígitos de la Tabla 22; los internos ("IP..") y las líneas sin código no se declaran
+        if (linea.getCodigo() == null || !linea.getCodigo().matches("\\d{4}")) return false;
         return switch (linea.getTipo()) {
             case BoletaDetalle.INGRESO -> true;
             case BoletaDetalle.DESCUENTO -> linea.getCodigo().startsWith("06");

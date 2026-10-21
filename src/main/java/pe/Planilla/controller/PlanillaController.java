@@ -68,4 +68,26 @@ public class PlanillaController {
     public ResponseEntity<PlanillaCabecera> reabrir(@PathVariable String periodo, @RequestBody ReaperturaDTO dto, Authentication auth) {
         return ResponseEntity.ok(planillaService.reabrir(periodo, auth.getName(), dto.getMotivo()));
     }
+
+    // Adelanto de la 1ra quincena: propuesta (GET) y registro como descuento 0701 del mes (POST)
+    @GetMapping("/{periodo}/quincena")
+    public ResponseEntity<List<PlanillaService.Quincena>> quincena(@PathVariable String periodo) {
+        return ResponseEntity.ok(planillaService.calcularQuincena(periodo));
+    }
+
+    @PostMapping("/{periodo}/quincena/registrar")
+    public ResponseEntity<List<PlanillaService.Quincena>> registrarQuincena(@PathVariable String periodo) {
+        return ResponseEntity.ok(planillaService.registrarQuincena(periodo));
+    }
+
+    // Desglose de la gratificación (julio/diciembre) y de la CTS (mayo/noviembre) de un trabajador
+    @GetMapping("/{periodo}/empleados/{idEmpleado}/gratificacion")
+    public ResponseEntity<PlanillaService.DetalleGratificacion> gratificacion(@PathVariable String periodo, @PathVariable Integer idEmpleado) {
+        return ResponseEntity.ok(planillaService.detalleGratificacion(idEmpleado, periodo));
+    }
+
+    @GetMapping("/{periodo}/empleados/{idEmpleado}/cts")
+    public ResponseEntity<PlanillaService.DetalleCts> cts(@PathVariable String periodo, @PathVariable Integer idEmpleado) {
+        return ResponseEntity.ok(planillaService.detalleCts(idEmpleado, periodo));
+    }
 }

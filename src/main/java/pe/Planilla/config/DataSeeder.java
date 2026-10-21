@@ -66,6 +66,20 @@ public class DataSeeder implements ApplicationRunner {
         sembrarConcepto("0105", "Horas extras 25%", "INGRESO", true, true);
         sembrarConcepto("0106", "Horas extras 35%", "INGRESO", true, true);
         sembrarConcepto("0118", "Remuneración vacacional", "INGRESO", true, true);
+        // Conceptos de la planilla de la contadora (2026-10-21). Los códigos 0102/0107/0904/0915 son de la Tabla 22:
+        // confirmarlos con el contador antes de declarar. Los "IP.." son internos (no salen en el PLAME).
+        sembrarConcepto("0102", "Comisiones", "INGRESO", true, true);
+        sembrarConcepto("0107", "Trabajo en día feriado o de descanso", "INGRESO", true, true);
+        sembrarConcepto("0904", "Movilidad (condición de trabajo, no remunerativa)", "INGRESO", false, false);
+        sembrarConcepto("0915", "Capacitación (condición de trabajo, no remunerativa)", "INGRESO", false, false);
+        sembrarConcepto("IP01", "Bono por condición de trabajo (no remunerativo)", "INGRESO", false, false);
+        sembrarConcepto("0701", "Adelanto de remuneración (1ra quincena)", "DESCUENTO", false, false);
+        sembrarConcepto("0702", "Cuota de préstamo", "DESCUENTO", false, false);
+        sembrarConcepto("IP11", "Descuento por menú", "DESCUENTO", false, false);
+        sembrarConcepto("IP12", "Penalidad", "DESCUENTO", false, false);
+        sembrarConcepto("IP13", "Equipos (SIP)", "DESCUENTO", false, false);
+        sembrarConcepto("IP14", "EPS: aporte del trabajador", "DESCUENTO", false, false);
+        sembrarConcepto("IP15", "Otros descuentos", "DESCUENTO", false, false);
 
         // Tasas AFP vigentes según la SBS (ago-2026). Cambian: actualízalas con PUT /api/afps/{id}.
         // 12732.70 es el tope trimestral oct-dic 2026 según fuente secundaria: VERIFICAR en sbs.gob.pe.
@@ -85,7 +99,9 @@ public class DataSeeder implements ApplicationRunner {
             log.warn("Se activaron los usuarios existentes (migración de la columna 'activo').");
         }
 
-        if (usuarioRepository.count() == 0) {
+        if (usuarioRepository.count() == 0 && (adminPassword == null || adminPassword.isBlank())) {
+            log.error("No hay usuarios y ADMIN_PASSWORD esta vacia: no se crea el usuario inicial. Defina ADMIN_PASSWORD y reinicie.");
+        } else if (usuarioRepository.count() == 0) {
             Usuario admin = new Usuario();
             admin.setUsername(adminUsername);
             admin.setPassword(passwordEncoder.encode(adminPassword));

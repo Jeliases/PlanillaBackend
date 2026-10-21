@@ -43,6 +43,12 @@ public class MovimientoController {
         return ResponseEntity.status(HttpStatus.CREATED).body(movimientoService.registrarVacaciones(dto));
     }
 
+    // Días trabajados en feriado o día de descanso: el sistema calcula (básico + asignación) / 30 por día
+    @PostMapping("/feriado")
+    public ResponseEntity<MovimientoResponseDTO> registrarFeriadoLaborado(@RequestBody pe.Planilla.model.dto.FeriadoLaboradoRequestDTO dto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(movimientoService.registrarFeriadoLaborado(dto));
+    }
+
     // Anular un movimiento mal registrado (no recalcula boletas ya procesadas: hay que volver a procesar la planilla)
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Integer id) {

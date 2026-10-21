@@ -55,6 +55,12 @@
             <version>5.2.5</version>
         </dependency>
 
+        <!-- Salud del contenedor (/actuator/health) para Docker y el despliegue -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- Auditoría: historial de cada cambio en las tablas (quién, cuándo, qué) -->
         <dependency>
             <groupId>org.springframework.data</groupId>

@@ -119,6 +119,7 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         f.setCorreo(dto.getCorreo() != null ? dto.getCorreo() : e.getCorreo());
         f.setTelefono(dto.getTelefono() != null ? dto.getTelefono() : e.getTelefono());
         f.setSueldoBase(dto.getSueldoBase() != null ? dto.getSueldoBase() : e.getSueldoBase());
+        f.setHorasJornada(dto.getHorasJornada() != null ? dto.getHorasJornada() : e.getHorasJornada());
         f.setBanco(dto.getBanco() != null ? dto.getBanco() : e.getBanco());
         f.setCuentaBancaria(dto.getCuentaBancaria() != null ? dto.getCuentaBancaria() : e.getCuentaBancaria());
         f.setBancoCts(dto.getBancoCts() != null ? dto.getBancoCts() : e.getBancoCts());
@@ -184,10 +185,17 @@ public class EmpleadoServiceImpl implements EmpleadoService {
             throw new RuntimeException("El correo «" + dto.getCorreo().trim() + "» no es válido.");
         }
 
-        // --- Sistema de pensiones: ONP por defecto; AFP exige elegir el fondo
+        // --- Jornada: 8 horas (completa) por defecto; con menos horas el básico se paga proporcional
+        Integer horasJornada = dto.getHorasJornada() == null ? 8 : dto.getHorasJornada();
+        if (horasJornada < 1 || horasJornada > 8) {
+            throw new RuntimeException("Las horas de jornada deben estar entre 1 y 8 (8 = tiempo completo).");
+        }
+
+        // --- Sistema de pensiones: ONP por defecto; AFP exige elegir el fondo; NINGUNO = jubilado / no aportante
         String sistema = esVacio(dto.getSistemaPensionario()) ? "ONP" : dto.getSistemaPensionario().trim().toUpperCase();
-        if (!sistema.equals("ONP") && !sistema.equals("AFP")) {
-            throw new RuntimeException("El sistema pensionario debe ser ONP o AFP.");
+        if (sistema.startsWith("SIN") || sistema.startsWith("NO ") || sistema.startsWith("NING")) sistema = "NINGUNO";
+        if (!sistema.equals("ONP") && !sistema.equals("AFP") && !sistema.equals("NINGUNO")) {
+            throw new RuntimeException("El sistema pensionario debe ser ONP, AFP o NINGUNO (no aportante).");
         }
         Afp afp = null;
         if (sistema.equals("AFP")) {
@@ -218,6 +226,7 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         empleado.setCorreo(limpiar(dto.getCorreo()));
         empleado.setTelefono(limpiar(dto.getTelefono()));
         empleado.setSueldoBase(dto.getSueldoBase());
+        empleado.setHorasJornada(horasJornada);
         empleado.setBanco(limpiar(dto.getBanco()));
         empleado.setCuentaBancaria(limpiar(dto.getCuentaBancaria()));
         empleado.setBancoCts(limpiar(dto.getBancoCts()));
@@ -254,6 +263,7 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         dto.setCorreo(e.getCorreo());
         dto.setTelefono(e.getTelefono());
         dto.setSueldoBase(e.getSueldoBase());
+        dto.setHorasJornada(e.getHorasJornada() != null ? e.getHorasJornada() : 8);
         dto.setBanco(e.getBanco());
         dto.setCuentaBancaria(e.getCuentaBancaria());
         dto.setBancoCts(e.getBancoCts());

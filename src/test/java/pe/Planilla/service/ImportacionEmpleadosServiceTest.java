@@ -122,10 +122,20 @@ class ImportacionEmpleadosServiceTest {
             assertNotNull(libro.getSheet("Instrucciones"));
             assertNotNull(libro.getSheet("Listas"));
             Row cab = libro.getSheet("Empleados").getRow(0);
-            assertEquals(COLS.length, cab.getLastCellNum());
-            assertEquals("numero_documento", cab.getCell(1).getStringCellValue());
-            assertEquals(7, libro.getSheet("Empleados").getDataValidations().size()); // tipo doc, régimen, AFP, sistema, asig. familiar, comisión, horas
+            // Los campos y el orden de la hoja «PLANILLA DE ASESORES» de la contadora, y después las opcionales
+            assertEquals(27, cab.getLastCellNum());
+            assertEquals("N°", cab.getCell(0).getStringCellValue());
+            assertEquals("COD", cab.getCell(1).getStringCellValue());
+            assertEquals("NOMBRE DEL TRABAJADOR", cab.getCell(2).getStringCellValue());
+            assertEquals("DNI", cab.getCell(3).getStringCellValue());
+            assertEquals("REGIMEN", cab.getCell(12).getStringCellValue());
+            assertEquals("TIPO DE COMISIÓN", cab.getCell(14).getStringCellValue());
+            assertEquals("BASICO", cab.getCell(15).getStringCellValue());
+            assertEquals("hras", cab.getCell(16).getStringCellValue());
+            assertEquals("ASIG. FAM.", cab.getCell(17).getStringCellValue());
+            assertEquals(6, libro.getSheet("Empleados").getDataValidations().size()); // tipo doc, régimen laboral, pensión, horas, asig. familiar, comisión
             assertEquals("Régimen General", libro.getSheet("Listas").getRow(1).getCell(1).getStringCellValue());
+            assertEquals("ONP", libro.getSheet("Listas").getRow(1).getCell(2).getStringCellValue());
             // sin fila de ejemplo: nadie debe importar datos falsos por descuido
             assertEquals(0, libro.getSheet("Empleados").getLastRowNum());
         }

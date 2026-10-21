@@ -45,37 +45,40 @@ public class ImportacionEmpleadosService {
     private final RegimenLaboralRepository regimenRepository;
     private final AfpRepository afpRepository;
 
-    private record Columna(String clave, boolean obligatoria, String descripcion, String ejemplo) {}
+    /** clave = nombre interno (lo que entiende el importador); encabezado = lo que se escribe en la plantilla. */
+    private record Columna(String clave, String encabezado, boolean obligatoria, String descripcion, String ejemplo) {}
 
-    // Orden = orden de las columnas en la plantilla. El encabezado de la plantilla es la clave.
+    // La plantilla copia los campos y el orden de la hoja «PLANILLA DE ASESORES» de la contadora (N° … ASIG. FAM.);
+    // después van columnas opcionales que esa hoja no tiene. El importador acepta también los nombres antiguos (numero_documento…).
     private static final List<Columna> COLUMNAS = List.of(
-            new Columna("tipo_documento", false, "DNI, CE, PASAPORTE, PTP o CSR. Vacío = DNI.", "DNI"),
-            new Columna("numero_documento", true, "DNI: 8 dígitos. Otros: 6 a 15 letras o números, sin espacios.", "45871236"),
-            new Columna("nombres", true, "Nombres del trabajador.", "María Elena"),
-            new Columna("apellidos", true, "Apellido paterno y materno.", "Quispe Rojas"),
-            new Columna("fecha_nacimiento", false, "dd/mm/aaaa.", "14/03/1992"),
-            new Columna("fecha_ingreso", true, "dd/mm/aaaa. Define los días del primer mes y los meses de gratificación y CTS.", "01/02/2025"),
-            new Columna("cargo", false, "Puesto de trabajo.", "Asesor comercial"),
-            new Columna("area", false, "Área, sede o campaña.", "Ventas"),
-            new Columna("correo", false, "Correo electrónico (para enviar la boleta).", "maria.quispe@empresa.com"),
-            new Columna("telefono", false, "Celular o teléfono.", "987654321"),
-            new Columna("sueldo_base", true, "Sueldo mensual en soles, mayor a 0. Sin el signo S/.", "1500.00"),
-            new Columna("regimen", false, "Régimen laboral, de la lista (hoja Listas). Vacío = Régimen General.", "Régimen General"),
-            new Columna("sistema_pensionario", false, "ONP, AFP o NINGUNO (jubilado / no aportante). Vacío = ONP (o AFP si indica una AFP).", "AFP"),
-            new Columna("afp", false, "Obligatoria si es AFP. Elija de la lista.", "Habitat"),
-            new Columna("cuspp", false, "Código CUSPP de la AFP (opcional).", "649871AFMRQ2"),
-            new Columna("tipo_comision_afp", false, "FLUJO (por defecto) o MIXTA. La mixta no paga comisión por flujo: solo 10% + prima.", "FLUJO"),
-            new Columna("asignacion_familiar", false, "SI o NO. Vacío = NO.", "NO"),
-            new Columna("banco", false, "Banco donde se deposita el sueldo.", "BCP"),
-            new Columna("cuenta_bancaria", false, "Número de cuenta o CCI del sueldo.", "19412345678901"),
-            new Columna("banco_cts", false, "Banco donde se deposita la CTS.", "Interbank"),
-            new Columna("cuenta_cts", false, "Número de cuenta de la CTS.", "8983001234567"),
-            new Columna("id_marcador", false, "ID con el que marca en el reloj biométrico, si es distinto al documento (ej. 10).", "10"),
-            new Columna("horas_jornada", false, "Horas de trabajo al día: 8 (jornada completa) o 4 (media jornada: el básico se paga proporcional). Vacío = 8.", "8"),
-            new Columna("fecha_fin_contrato", false, "dd/mm/aaaa. Fin del contrato a plazo fijo; vacío o «Indefinido» = sin fecha.", "31/12/2026"),
-            new Columna("supervisor", false, "Supervisor o jefe directo.", "Abel"),
-            new Columna("sede", false, "Sede o lugar de trabajo.", "LIMA"),
-            new Columna("cartera", false, "Cartera o campaña.", "ADM")
+            new Columna("n", "N°", false, "Número de fila (no se usa).", "1"),
+            new Columna("idmarcador", "COD", false, "Código del trabajador en el reloj marcador (ID con el que marca). Vacío = su documento.", "10"),
+            new Columna("nombrecompleto", "NOMBRE DEL TRABAJADOR", true, "Apellido paterno, apellido materno y nombres, en ese orden.", "QUISPE ROJAS MARIA ELENA"),
+            new Columna("numerodocumento", "DNI", true, "8 dígitos. Carné de extranjería: 6 a 15 letras o números (y CE en TIPO DOCUMENTO).", "45871236"),
+            new Columna("fechaingreso", "FECHA DE INGRESO", true, "dd/mm/aaaa. Define los días del primer mes y los meses de gratificación y CTS.", "01/02/2025"),
+            new Columna("fechafincontrato", "TERMINO DE CONTRATO", false, "dd/mm/aaaa o «Indefinido».", "31/12/2026"),
+            new Columna("fechacese", "FECHA CESE", false, "Solo si ya cesó: último día trabajado (dd/mm/aaaa). Se importa como cesado.", ""),
+            new Columna("cargo", "CARGO", false, "Puesto de trabajo.", "ASESOR"),
+            new Columna("supervisor", "SUPERVISOR", false, "Supervisor o jefe directo.", "Abel"),
+            new Columna("sede", "SEDE", false, "Sede o lugar de trabajo.", "LIMA"),
+            new Columna("area", "CENTRO DE COSTOS", false, "Centro de costos o área.", "Cobranzas"),
+            new Columna("cartera", "CARTERA", false, "Cartera o campaña.", "ADM"),
+            new Columna("regimen", "REGIMEN", false, "Sistema de pensión: ONP, NO APORTANTE o el nombre de la AFP (Integra, Prima, Habitat, Profuturo). Vacío = ONP.", "Integra"),
+            new Columna("cuspp", "CUSPP", false, "Código CUSPP de la AFP (opcional).", "649871AFMRQ2"),
+            new Columna("tipocomisionafp", "TIPO DE COMISIÓN", false, "Com.Flujo (por defecto) o Com.Mixta (no paga comisión por flujo).", "Com.Flujo"),
+            new Columna("sueldobase", "BASICO", true, "Sueldo mensual a jornada completa, en soles, sin «S/».", "1500.00"),
+            new Columna("horasjornada", "hras", false, "Horas de trabajo al día: 8 (completa), 6 o 4 (media jornada: el básico se paga proporcional). Vacío = 8.", "8"),
+            new Columna("asignacionfamiliar", "ASIG. FAM.", false, "SI o NO (también vale el monto, 123.00). Vacío = NO.", "NO"),
+            // --- opcionales que la hoja de la contadora no trae
+            new Columna("tipodocumento", "TIPO DOCUMENTO", false, "DNI o CE. Vacío = DNI.", "DNI"),
+            new Columna("fechanacimiento", "FECHA NACIMIENTO", false, "dd/mm/aaaa.", "14/03/1992"),
+            new Columna("correo", "CORREO", false, "Correo electrónico (para enviar la boleta).", "maria.quispe@empresa.com"),
+            new Columna("telefono", "TELEFONO", false, "Celular o teléfono.", "987654321"),
+            new Columna("banco", "BANCO", false, "Banco donde se deposita el sueldo.", "BCP"),
+            new Columna("cuentabancaria", "CUENTA", false, "Número de cuenta o CCI del sueldo.", "19412345678901"),
+            new Columna("bancocts", "BANCO CTS", false, "Banco donde se deposita la CTS.", "Interbank"),
+            new Columna("cuentacts", "CUENTA CTS", false, "Número de cuenta de la CTS.", "8983001234567"),
+            new Columna("regimenlaboral", "REGIMEN LABORAL", false, "Régimen General (por defecto), Pequeña Empresa (Mype), Microempresa (Remype) o Cuarta Categoría (RxH).", "Régimen General")
     );
 
     /** Valores de la columna «REGIMEN» de la planilla de la contadora que en realidad son el sistema de pensiones. */
@@ -147,12 +150,12 @@ public class ImportacionEmpleadosService {
             for (int i = 0; i < COLUMNAS.size(); i++) {
                 Columna col = COLUMNAS.get(i);
                 Cell celda = cabecera.createCell(i);
-                celda.setCellValue(col.clave());
+                celda.setCellValue(col.encabezado());
                 celda.setCellStyle(col.obligatoria() ? encObligatorio : encOpcional);
-                hoja.setColumnWidth(i, Math.max(16, col.clave().length() + 4) * 256);
+                hoja.setColumnWidth(i, Math.max(14, col.encabezado().length() + 4) * 256);
                 switch (col.clave()) {
-                    case "fecha_nacimiento", "fecha_ingreso" -> hoja.setDefaultColumnStyle(i, fecha);
-                    case "sueldo_base" -> hoja.setDefaultColumnStyle(i, dinero);
+                    case "fechanacimiento", "fechaingreso", "fechafincontrato", "fechacese" -> hoja.setDefaultColumnStyle(i, fecha);
+                    case "sueldobase" -> hoja.setDefaultColumnStyle(i, dinero);
                     default -> hoja.setDefaultColumnStyle(i, texto);
                 }
             }
@@ -160,9 +163,9 @@ public class ImportacionEmpleadosService {
 
             // --- hoja de listas (alimenta los desplegables)
             Row lc = listas.createRow(0);
-            lc.createCell(0).setCellValue("tipo_documento");
-            lc.createCell(1).setCellValue("regimen");
-            lc.createCell(2).setCellValue("afp");
+            lc.createCell(0).setCellValue("TIPO DOCUMENTO");
+            lc.createCell(1).setCellValue("REGIMEN LABORAL");
+            lc.createCell(2).setCellValue("REGIMEN (pensión)");
             TipoDocumento[] tipos = TipoDocumento.values();
             for (int i = 0; i < tipos.length; i++) {
                 listas.createRow(i + 1).createCell(0).setCellValue(tipos[i].name());
@@ -170,38 +173,36 @@ public class ImportacionEmpleadosService {
             for (int i = 0; i < regimenes.size(); i++) {
                 filaDe(listas, i + 1).createCell(1).setCellValue(regimenes.get(i).getNombre());
             }
-            for (int i = 0; i < afps.size(); i++) {
-                filaDe(listas, i + 1).createCell(2).setCellValue(afps.get(i).getNombre());
+            List<String> pensiones = new ArrayList<>(List.of("ONP", "NO APORTANTE"));
+            afps.forEach(a -> pensiones.add(a.getNombre()));
+            for (int i = 0; i < pensiones.size(); i++) {
+                filaDe(listas, i + 1).createCell(2).setCellValue(pensiones.get(i));
             }
             for (int i = 0; i < 3; i++) listas.setColumnWidth(i, 30 * 256);
 
             DataValidationHelper dv = hoja.getDataValidationHelper();
-            agregarLista(hoja, dv, indice("tipo_documento"), dv.createFormulaListConstraint("Listas!$A$2:$A$" + (tipos.length + 1)));
+            agregarLista(hoja, dv, indice("tipodocumento"), dv.createFormulaListConstraint("Listas!$A$2:$A$" + (tipos.length + 1)));
             if (!regimenes.isEmpty()) {
-                agregarLista(hoja, dv, indice("regimen"), dv.createFormulaListConstraint("Listas!$B$2:$B$" + (regimenes.size() + 1)));
+                agregarLista(hoja, dv, indice("regimenlaboral"), dv.createFormulaListConstraint("Listas!$B$2:$B$" + (regimenes.size() + 1)));
             }
-            if (!afps.isEmpty()) {
-                agregarLista(hoja, dv, indice("afp"), dv.createFormulaListConstraint("Listas!$C$2:$C$" + (afps.size() + 1)));
-            }
-            agregarLista(hoja, dv, indice("sistema_pensionario"), dv.createExplicitListConstraint(new String[]{"ONP", "AFP", "NINGUNO"}));
-            agregarLista(hoja, dv, indice("horas_jornada"), dv.createExplicitListConstraint(new String[]{"8", "6", "4"}));
-            agregarLista(hoja, dv, indice("asignacion_familiar"), dv.createExplicitListConstraint(new String[]{"SI", "NO"}));
-            agregarLista(hoja, dv, indice("tipo_comision_afp"), dv.createExplicitListConstraint(new String[]{"FLUJO", "MIXTA"}));
+            agregarLista(hoja, dv, indice("regimen"), dv.createFormulaListConstraint("Listas!$C$2:$C$" + (pensiones.size() + 1)));
+            agregarLista(hoja, dv, indice("horasjornada"), dv.createExplicitListConstraint(new String[]{"8", "6", "4"}));
+            agregarLista(hoja, dv, indice("asignacionfamiliar"), dv.createExplicitListConstraint(new String[]{"SI", "NO"}));
+            agregarLista(hoja, dv, indice("tipocomisionafp"), dv.createExplicitListConstraint(new String[]{"Com.Flujo", "Com.Mixta"}));
 
             // --- instrucciones
             int f = 0;
             String[] notas = {
                     "CARGA MASIVA DE EMPLEADOS",
                     "1. Llene la hoja «Empleados»: una fila por trabajador. Las columnas con encabezado azul son obligatorias.",
-                    "2. No cambie los nombres de los encabezados (el orden de las columnas sí puede variar).",
-                    "   También puede subir la hoja «PLANILLA» del Excel mensual de la contadora tal cual (cabecera en la fila 5):",
-                    "   se leen NOMBRE DEL TRABAJADOR, DNI, fechas, CARGO, SUPERVISOR, SEDE, CENTRO DE COSTOS, CARTERA, REGIMEN (pensión),",
-                    "   CUSPP, TIPO DE COMISIÓN, BASICO, hras, ASIG. FAM., Cuenta y Banco; las columnas del mes se ignoran.",
-                    "3. Fechas como dd/mm/aaaa. Montos sin «S/» ni separador de miles.",
-                    "4. Régimen, AFP, tipo de documento, sistema pensionario y asignación familiar se eligen de la lista desplegable.",
-                    "5. El sistema revisa todo el archivo antes de guardar. Si una fila tiene error, no se guarda ninguna: corrija y vuelva a subirlo.",
-                    "6. Solo crea trabajadores nuevos. Un documento que ya existe se reporta como error (no se modifica).",
-                    "7. Máximo 2,000 filas por archivo."
+                    "   Los campos y el orden son los de la hoja «PLANILLA DE ASESORES» (N° … ASIG. FAM.); las demás columnas son opcionales.",
+                    "2. También puede subir la hoja «PLANILLA» del Excel mensual tal cual (cabecera en la fila 5): las columnas del mes se ignoran.",
+                    "3. NOMBRE DEL TRABAJADOR: apellido paterno, apellido materno y nombres, en ese orden.",
+                    "4. REGIMEN es el sistema de pensión (ONP, NO APORTANTE o la AFP). El régimen laboral va en REGIMEN LABORAL (vacío = General).",
+                    "5. Fechas como dd/mm/aaaa (también dd/mm/aa). Montos sin «S/» ni separador de miles. «-» cuenta como vacío.",
+                    "6. El sistema revisa todo el archivo antes de guardar. Si una fila tiene error, no se guarda ninguna: corrija y vuelva a subirlo.",
+                    "7. Solo crea trabajadores nuevos. Un documento que ya existe se reporta como error (no se modifica).",
+                    "8. Máximo 2,000 filas por archivo."
             };
             for (String nota : notas) {
                 Cell c = instrucciones.createRow(f++).createCell(0);
@@ -222,7 +223,7 @@ public class ImportacionEmpleadosService {
             }
             for (Columna col : COLUMNAS) {
                 Row r = instrucciones.createRow(f++);
-                r.createCell(0).setCellValue(col.clave());
+                r.createCell(0).setCellValue(col.encabezado());
                 r.createCell(1).setCellValue(col.obligatoria() ? "Sí" : "No");
                 r.createCell(2).setCellValue(col.descripcion());
                 r.createCell(3).setCellValue(col.ejemplo());
@@ -315,6 +316,8 @@ public class ImportacionEmpleadosService {
             if (presentes.contains("nombrecompleto")) { // «NOMBRE DEL TRABAJADOR» trae apellidos y nombres juntos
                 presentes.add("nombres");
                 presentes.add("apellidos");
+            } else if (presentes.contains("nombres") && presentes.contains("apellidos")) { // plantilla antigua, por separado
+                presentes.add("nombrecompleto");
             }
             List<String> faltantes = COLUMNAS.stream()
                     .filter(Columna::obligatoria)
@@ -442,11 +445,15 @@ public class ImportacionEmpleadosService {
 
         // Régimen laboral: por nombre; vacío = Régimen General. En la planilla de la contadora la columna «REGIMEN»
         // es en realidad el sistema de pensiones (ONP, Integra, NO APORTANTE...): se detecta por el valor.
-        String nombreRegimen = texto(fila, col, "regimen", fmt);
+        String nombreRegimen = texto(fila, col, "regimenlaboral", fmt); // columna explícita de la plantilla nueva
         String pensionDesdeRegimen = null;
-        if (nombreRegimen != null && (VALORES_PENSION.contains(clave(nombreRegimen)) || afps.containsKey(clave(nombreRegimen)))) {
-            pensionDesdeRegimen = nombreRegimen;
-            nombreRegimen = null;
+        String regimenCol = texto(fila, col, "regimen", fmt);
+        if (regimenCol != null) {
+            if (VALORES_PENSION.contains(clave(regimenCol)) || afps.containsKey(clave(regimenCol))) {
+                pensionDesdeRegimen = regimenCol;
+            } else if (nombreRegimen == null) {
+                nombreRegimen = regimenCol;
+            }
         }
         RegimenLaboral regimen = nombreRegimen == null ? regimenes.get(clave("Régimen General")) : regimenes.get(clave(nombreRegimen));
         if (regimen == null) {

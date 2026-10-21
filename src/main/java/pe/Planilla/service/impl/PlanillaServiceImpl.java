@@ -250,33 +250,60 @@ public class PlanillaServiceImpl implements PlanillaService {
     }
 
     /**
-     * Retención de 5ta: acumula lo ya percibido en el año. Si faltan boletas de meses anteriores (el sistema se empezó a
-     * usar a mitad de año) se estima con la remuneración actual para no subestimar la proyección anual.
+     * Retención de 5ta (procedimiento SUNAT): acumula lo percibido y lo retenido en el año. Para los meses anteriores SIN
+     * boleta (el sistema se empezó a usar a mitad de año) se estima el ingreso con la remuneración actual Y se simula la
+     * retención que ese mes habría hecho el mismo procedimiento; si no, el impuesto de todo el año se repartiría solo en
+     * los meses que quedan (en setiembre salía 777.58 en vez de 259.19 para un sueldo de 5 113 constante).
      */
     private BigDecimal calcularRenta5ta(Empleado empleado, YearMonth ym, BigDecimal factor, BigDecimal fijaMensual, BigDecimal ingresoMesActual) {
         int anio = ym.getYear();
         int mes = ym.getMonthValue();
         List<BoletaPago> delAnio = boletaRepository
                 .findByPlanilla_PeriodoStartingWithAndEmpleado_IdEmpleado(anio + "-", empleado.getIdEmpleado());
-        int mesCorte = rentaQuintaService.mesCorteRetenciones(mes);
 
-        BigDecimal ingresosPrevios = BigDecimal.ZERO;
-        BigDecimal retencionesPrevias = BigDecimal.ZERO;
+        BigDecimal[] ingreso = new BigDecimal[13];
+        BigDecimal[] retencion = new BigDecimal[13];
         for (int m = 1; m < mes; m++) {
             String per = String.format("%d-%02d", anio, m);
             BoletaPago b = delAnio.stream().filter(x -> per.equals(x.getPlanilla().getPeriodo())).findFirst().orElse(null);
             if (b != null) {
-                ingresosPrevios = ingresosPrevios.add(b.getTotalIngresos());
-                if (m <= mesCorte && b.getRenta5taRetenida() != null) {
-                    retencionesPrevias = retencionesPrevias.add(b.getRenta5taRetenida());
-                }
+                ingreso[m] = ingresoAfecto5ta(b);
+                retencion[m] = b.getRenta5taRetenida() != null ? b.getRenta5taRetenida() : BigDecimal.ZERO;
             } else {
-                ingresosPrevios = ingresosPrevios.add(estimarIngresoMes(empleado, YearMonth.of(anio, m), fijaMensual, factor));
+                ingreso[m] = estimarIngresoMes(empleado, YearMonth.of(anio, m), fijaMensual, factor);
+                retencion[m] = ingreso[m].signum() > 0
+                        ? rentaQuintaService.calcularRetencionMensual(new DatosRenta5ta(m, suma(ingreso, 1, m - 1), ingreso[m],
+                                fijaMensual, factor, suma(retencion, 1, rentaQuintaService.mesCorteRetenciones(m))))
+                        : BigDecimal.ZERO;
             }
         }
-
+        BigDecimal ingresosPrevios = suma(ingreso, 1, mes - 1);
+        BigDecimal retencionesPrevias = suma(retencion, 1, rentaQuintaService.mesCorteRetenciones(mes));
         return rentaQuintaService.calcularRetencionMensual(
                 new DatosRenta5ta(mes, ingresosPrevios, ingresoMesActual, fijaMensual, factor, retencionesPrevias));
+    }
+
+    private BigDecimal suma(BigDecimal[] porMes, int desde, int hasta) {
+        BigDecimal s = BigDecimal.ZERO;
+        for (int m = desde; m <= hasta && m < porMes.length; m++) {
+            if (porMes[m] != null) s = s.add(porMes[m]);
+        }
+        return s;
+    }
+
+    /** Ingreso de una boleta que cuenta para la 5ta: ingresos menos los no afectos (condición de trabajo) y menos las tardanzas. */
+    private BigDecimal ingresoAfecto5ta(BoletaPago b) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (BoletaDetalle d : b.getDetalle()) {
+            if (BoletaDetalle.INGRESO.equals(d.getTipo())) {
+                boolean afecto = d.getCodigo() == null || conceptoRepository.findByCodigo(d.getCodigo())
+                        .map(c -> !Boolean.FALSE.equals(c.getAfectaRenta5ta())).orElse(true);
+                if (afecto) total = total.add(d.getMonto());
+            } else if (BoletaDetalle.DESCUENTO.equals(d.getTipo()) && d.getCodigo() == null) {
+                total = total.subtract(d.getMonto()); // tardanzas (únicas líneas de descuento sin código)
+            }
+        }
+        return total.max(BigDecimal.ZERO);
     }
 
     private BigDecimal estimarIngresoMes(Empleado empleado, YearMonth ym, BigDecimal fijaMensual, BigDecimal factor) {

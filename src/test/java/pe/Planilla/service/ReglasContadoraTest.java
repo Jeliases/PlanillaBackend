@@ -102,6 +102,30 @@ class ReglasContadoraTest {
     }
 
     @Test
+    void rentaDeQuintaMesAMesSeMantieneEn259ConSueldoConstante() {
+        // Simulando enero a setiembre con 5113 fijos (lo que hace PlanillaServiceImpl para los meses sin boleta), la
+        // retención de setiembre debe ser la misma cuota de la hoja (259.19) y no el impuesto anual repartido en 4 meses.
+        BigDecimal fija = new BigDecimal("5113");
+        BigDecimal grati = new BigDecimal("5573.17");
+        int[] corte = {0, 0, 0, 3, 4, 4, 4, 7, 8, 8, 8, 11};
+        BigDecimal[] ingreso = new BigDecimal[13];
+        BigDecimal[] retencion = new BigDecimal[13];
+        for (int m = 1; m <= 9; m++) {
+            BigDecimal previos = BigDecimal.ZERO, retenidas = BigDecimal.ZERO;
+            for (int k = 1; k < m; k++) previos = previos.add(ingreso[k]);
+            for (int k = 1; k <= corte[m - 1]; k++) retenidas = retenidas.add(retencion[k]);
+            ingreso[m] = m == 7 ? fija.add(grati) : fija;
+            retencion[m] = renta.calcularRetencionMensual(new DatosRenta5ta(m, previos, ingreso[m], fija, BigDecimal.ONE, retenidas));
+        }
+        assertEquals(new BigDecimal("259.19"), retencion[1]);
+        assertEquals(new BigDecimal("259.20"), retencion[9]); // SUNAT mes a mes: 1 centavo sobre la cuota fija de la hoja
+        // Sin simular las retenciones previas, setiembre cobraría casi todo el impuesto del año de golpe
+        BigDecimal previos = fija.multiply(new BigDecimal("8")).add(grati);
+        assertEquals(new BigDecimal("777.58"),
+                renta.calcularRetencionMensual(new DatosRenta5ta(9, previos, fija, fija, BigDecimal.ONE, BigDecimal.ZERO)));
+    }
+
+    @Test
     void rentaDeQuintaEneroCoincideConLaHoja() {
         // Hoja "5TA": 5113 mensual + 2 gratificaciones con bonificación (5573.17) = 72502.34 anual; menos 7 UIT (38500)
         // = 34002.34; impuesto 2200 + 910.33 = 3110.33; cuota mensual 259.19

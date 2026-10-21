@@ -125,6 +125,61 @@ public class ExportacionService {
         }
     }
 
+    // --------------------------------------------------------------- quincena
+
+    /** Adelanto de la 1ra quincena: una fila por trabajador con su cuenta y el monto (para pagarlo por el banco). */
+    @Transactional(readOnly = true)
+    public byte[] quincena(String periodo) {
+        List<PlanillaService.Quincena> filas = planillaService.calcularQuincena(periodo);
+        if (filas.isEmpty()) throw new RuntimeException("No hay trabajadores para la quincena de " + periodo + ".");
+
+        try (XSSFWorkbook libro = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet hoja = libro.createSheet("Quincena " + periodo);
+            String[] cab = {"Tipo doc", "N° documento", "Apellidos y nombres", "Banco", "Cuenta", "Básico", "Asig. familiar",
+                    "Pensión (1/2)", "Renta 5ta (1/2)", "Adelanto", "Registrado en planilla"};
+            Row r0 = hoja.createRow(0);
+            CellStyle negrita = libro.createCellStyle();
+            Font f = libro.createFont();
+            f.setBold(true);
+            negrita.setFont(f);
+            for (int i = 0; i < cab.length; i++) {
+                Cell c = r0.createCell(i);
+                c.setCellValue(cab[i]);
+                c.setCellStyle(negrita);
+                hoja.setColumnWidth(i, (i == 2 ? 36 : 18) * 256);
+            }
+            int fila = 1;
+            BigDecimal total = BigDecimal.ZERO;
+            for (PlanillaService.Quincena q : filas) {
+                Row r = hoja.createRow(fila++);
+                int c = 0;
+                r.createCell(c++).setCellValue(q.tipoDocumento());
+                r.createCell(c++).setCellValue(q.documento());
+                r.createCell(c++).setCellValue(q.empleado());
+                r.createCell(c++).setCellValue(q.banco() != null ? q.banco() : "");
+                r.createCell(c++).setCellValue(q.cuenta() != null ? q.cuenta() : "");
+                r.createCell(c++).setCellValue(q.basico().doubleValue());
+                r.createCell(c++).setCellValue(q.asignacionFamiliar().doubleValue());
+                r.createCell(c++).setCellValue(q.pension().doubleValue());
+                r.createCell(c++).setCellValue(q.renta5ta().doubleValue());
+                r.createCell(c++).setCellValue(q.adelanto().doubleValue());
+                r.createCell(c).setCellValue(q.registrado() ? "SI" : "NO");
+                total = total.add(q.adelanto());
+            }
+            Row rt = hoja.createRow(fila);
+            Cell ct = rt.createCell(2);
+            ct.setCellValue("TOTAL");
+            ct.setCellStyle(negrita);
+            Cell cm = rt.createCell(9);
+            cm.setCellValue(total.doubleValue());
+            cm.setCellStyle(negrita);
+            libro.write(out);
+            return out.toByteArray();
+        } catch (IOException ex) {
+            throw new RuntimeException("No se pudo generar el Excel de la quincena: " + ex.getMessage());
+        }
+    }
+
     // ---------------------------------------------------------------- resumen
 
     @Transactional(readOnly = true)

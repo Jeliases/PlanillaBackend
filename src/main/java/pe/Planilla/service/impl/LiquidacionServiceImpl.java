@@ -87,7 +87,7 @@ public class LiquidacionServiceImpl implements LiquidacionService {
         }
 
         // ---- Remuneración computable
-        BigDecimal sueldo = empleado.getSueldoBase();
+        BigDecimal sueldo = calculadora.basicoMensual(empleado.getSueldoBase(), empleado.getHorasJornada()); // básico según la jornada
         BigDecimal asignacion = Boolean.TRUE.equals(empleado.getAsignacionFamiliar()) && Boolean.TRUE.equals(regimen.getAsignacionFamiliar())
                 ? calculadora.asignacionFamiliarMensual() : BigDecimal.ZERO;
         BigDecimal promedioVariables = promedioVariables(empleado.getIdEmpleado(), YearMonth.from(cese), avisos);

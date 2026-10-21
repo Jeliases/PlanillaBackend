@@ -36,6 +36,12 @@ public class Empleado {
 
     private BigDecimal sueldoBase;
 
+    /**
+     * Horas de la jornada diaria: 8 = tiempo completo (o null). Con menos horas el básico se paga proporcional
+     * (sueldo a jornada completa / 8 x horas), como la planilla de la contadora; con menos de 4 no hay CTS.
+     */
+    private Integer horasJornada;
+
     /** Banco y cuenta donde se deposita el sueldo. */
     private String banco;
     private String cuentaBancaria;
@@ -55,7 +61,7 @@ public class Empleado {
     @JoinColumn(name = "id_regimen")
     private RegimenLaboral regimenLaboral;
 
-    /** "ONP" o "AFP". Si es null (empleados antiguos) se trata como ONP. */
+    /** "ONP", "AFP" o "NINGUNO" (jubilado / no aportante: sin descuento de pensión). Si es null (empleados antiguos) se trata como ONP. */
     private String sistemaPensionario;
 
     @ManyToOne

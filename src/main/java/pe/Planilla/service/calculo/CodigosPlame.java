@@ -23,6 +23,18 @@ public final class CodigosPlame {
     public static final String VACACIONES_TRUNCAS = "0114";
     public static final String GRATIFICACION_PROPORCIONAL = "0407";
     public static final String BONIF_EXTRAORDINARIA_PROPORCIONAL = "0313";
+    // Variables de la planilla de la contadora (confirmar los códigos con el contador antes de declarar)
+    public static final String COMISIONES = "0102";
+    public static final String FERIADO_LABORADO = "0107";
+    // No remunerativos (condición de trabajo): no entran a AFP/ONP, EsSalud ni Renta de 5ta
+    public static final String MOVILIDAD = "0904";
+    public static final String CONDICION_TRABAJO = "0915";
+    /** Ingresos variables que se promedian para la gratificación y la CTS (suma del semestre / 6). */
+    public static final java.util.Set<String> VARIABLES_PROMEDIABLES = java.util.Set.of(HORAS_EXTRAS_25, HORAS_EXTRAS_35, COMISIONES);
+
+    // Descuentos al trabajador (no tributarios)
+    public static final String ADELANTO = "0701";
+    public static final String PRESTAMO = "0702";
 
     // Descuentos / tributos del trabajador
     public static final String AFP_COMISION = "0601";

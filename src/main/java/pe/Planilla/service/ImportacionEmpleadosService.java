@@ -61,7 +61,7 @@ public class ImportacionEmpleadosService {
             new Columna("telefono", false, "Celular o teléfono.", "987654321"),
             new Columna("sueldo_base", true, "Sueldo mensual en soles, mayor a 0. Sin el signo S/.", "1500.00"),
             new Columna("regimen", true, "Elija de la lista (hoja Listas): el nombre debe coincidir.", "Régimen General"),
-            new Columna("sistema_pensionario", false, "ONP o AFP. Vacío = ONP (o AFP si indica una AFP).", "AFP"),
+            new Columna("sistema_pensionario", false, "ONP, AFP o NINGUNO (jubilado / no aportante). Vacío = ONP (o AFP si indica una AFP).", "AFP"),
             new Columna("afp", false, "Obligatoria si es AFP. Elija de la lista.", "Habitat"),
             new Columna("cuspp", false, "Código CUSPP de la AFP (opcional).", "649871AFMRQ2"),
             new Columna("tipo_comision_afp", false, "FLUJO (por defecto) o MIXTA. La mixta no paga comisión por flujo: solo 10% + prima.", "FLUJO"),
@@ -70,7 +70,8 @@ public class ImportacionEmpleadosService {
             new Columna("cuenta_bancaria", false, "Número de cuenta o CCI del sueldo.", "19412345678901"),
             new Columna("banco_cts", false, "Banco donde se deposita la CTS.", "Interbank"),
             new Columna("cuenta_cts", false, "Número de cuenta de la CTS.", "8983001234567"),
-            new Columna("id_marcador", false, "ID con el que marca en el reloj biométrico, si es distinto al documento (ej. 10).", "10")
+            new Columna("id_marcador", false, "ID con el que marca en el reloj biométrico, si es distinto al documento (ej. 10).", "10"),
+            new Columna("horas_jornada", false, "Horas de trabajo al día: 8 (jornada completa) o 4 (media jornada: el básico se paga proporcional). Vacío = 8.", "8")
     );
 
     // Otros nombres que se aceptan para las columnas (el usuario puede escribir "DNI" en vez de numero_documento)
@@ -159,7 +160,8 @@ public class ImportacionEmpleadosService {
             if (!afps.isEmpty()) {
                 agregarLista(hoja, dv, indice("afp"), dv.createFormulaListConstraint("Listas!$C$2:$C$" + (afps.size() + 1)));
             }
-            agregarLista(hoja, dv, indice("sistema_pensionario"), dv.createExplicitListConstraint(new String[]{"ONP", "AFP"}));
+            agregarLista(hoja, dv, indice("sistema_pensionario"), dv.createExplicitListConstraint(new String[]{"ONP", "AFP", "NINGUNO"}));
+            agregarLista(hoja, dv, indice("horas_jornada"), dv.createExplicitListConstraint(new String[]{"8", "6", "4"}));
             agregarLista(hoja, dv, indice("asignacion_familiar"), dv.createExplicitListConstraint(new String[]{"SI", "NO"}));
             agregarLista(hoja, dv, indice("tipo_comision_afp"), dv.createExplicitListConstraint(new String[]{"FLUJO", "MIXTA"}));
 
@@ -350,6 +352,14 @@ public class ImportacionEmpleadosService {
         dto.setBancoCts(texto(fila, col, "bancocts", fmt));
         dto.setCuentaCts(textoNumerico(fila, col, "cuentacts", fmt));
         dto.setIdMarcador(textoNumerico(fila, col, "idmarcador", fmt));
+        String horas = texto(fila, col, "horasjornada", fmt);
+        if (horas != null) {
+            try {
+                dto.setHorasJornada(new java.math.BigDecimal(horas.replace(",", ".")).intValueExact());
+            } catch (ArithmeticException | NumberFormatException ex) {
+                throw new RuntimeException("horas_jornada debe ser un número entero entre 1 y 8 (vacío = 8).");
+            }
+        }
         dto.setCuspp(texto(fila, col, "cuspp", fmt));
         dto.setTipoComisionAfp(texto(fila, col, "tipocomisionafp", fmt));
 
@@ -369,7 +379,9 @@ public class ImportacionEmpleadosService {
         String sistema = texto(fila, col, "sistemapensionario", fmt);
         String nombreAfp = texto(fila, col, "afp", fmt);
         if (sistema == null) sistema = nombreAfp != null ? "AFP" : "ONP";
-        dto.setSistemaPensionario(sistema.trim().toUpperCase());
+        sistema = sistema.trim().toUpperCase();
+        if (sistema.startsWith("SIN") || sistema.startsWith("NO ") || sistema.startsWith("NING")) sistema = "NINGUNO";
+        dto.setSistemaPensionario(sistema);
         if ("AFP".equals(dto.getSistemaPensionario())) {
             if (nombreAfp == null) {
                 throw new RuntimeException("Indique la AFP (el trabajador está en AFP).");

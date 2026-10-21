@@ -33,6 +33,9 @@ public class PlanillaProperties {
     /** Dirección fiscal que sale en la boleta (igual que en la boleta modelo). */
     private String direccion = "CAL. HUAMACHUCO NRO. 1408 DPTO. 704 LIMA - LIMA - JESUS MARIA";
     private String lugarPago = "LIMA";
+    /** Representante legal que firma las constancias de gratificación y CTS (dato personal: solo por variable de entorno). */
+    private String representanteLegal = "";
+    private String representanteDocumento = "";
 
     // --- Asistencia (comunicado de tardanzas) ---
     /** Horario cuando el trabajador no tiene uno programado en el tareo. */

@@ -12,6 +12,8 @@ public interface MovimientoService {
     /** Registra un movimiento por cada tasa con horas (25% -> 0105, 35% -> 0106), como pide el PLAME. */
     List<MovimientoResponseDTO> calcularYRegistrarHorasExtras(HorasExtrasRequestDTO dto);
     MovimientoResponseDTO registrarVacaciones(VacacionRequestDTO dto);
+    /** Días trabajados en feriado o descanso: (básico + asignación familiar) / 30 por día (código 0107). */
+    MovimientoResponseDTO registrarFeriadoLaborado(pe.Planilla.model.dto.FeriadoLaboradoRequestDTO dto);
     List<MovimientoResponseDTO> listarPorPeriodo(String periodo);
     void eliminar(Integer idMovimiento);
 }

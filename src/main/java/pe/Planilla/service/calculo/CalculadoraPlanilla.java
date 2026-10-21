@@ -72,6 +72,36 @@ public class CalculadoraPlanilla {
         return mensual.multiply(new BigDecimal(dias)).divide(DIAS_MES, 2, RoundingMode.HALF_UP);
     }
 
+    // -------------------------------------------------------------- Jornada
+
+    /** Básico del mes según la jornada: el sueldo es a jornada completa (8 h); con menos horas se paga sueldo / 8 x horas. */
+    public BigDecimal basicoMensual(BigDecimal sueldoJornadaCompleta, Integer horasJornada) {
+        if (horasJornada == null || horasJornada >= 8) return sueldoJornadaCompleta;
+        return sueldoJornadaCompleta.multiply(new BigDecimal(horasJornada)).divide(new BigDecimal("8"), 2, RoundingMode.HALF_UP);
+    }
+
+    /** Valor de una hora normal: básico del mes / 30 días / horas de la jornada (4 decimales para no perder precisión). */
+    public BigDecimal valorHora(BigDecimal basicoMensual, Integer horasJornada) {
+        int horas = horasJornada == null || horasJornada < 1 ? 8 : horasJornada;
+        return basicoMensual.divide(DIAS_MES, 6, RoundingMode.HALF_UP).divide(new BigDecimal(horas), 4, RoundingMode.HALF_UP);
+    }
+
+    /** Un trabajador a tiempo parcial (menos de 4 horas al día) no tiene derecho a CTS. */
+    public boolean tieneCts(Integer horasJornada) {
+        return horasJornada == null || horasJornada >= 4;
+    }
+
+    /** Pago por trabajar en feriado o día de descanso: (básico + asignación familiar) / 30 por cada día (la planilla de la contadora). */
+    public BigDecimal feriadoLaborado(BigDecimal basicoMasAsignacion, int dias) {
+        return prorratear(basicoMasAsignacion, dias);
+    }
+
+    /** Promedio mensual de los ingresos variables de un semestre: suma / 6 (como la planilla de la contadora). */
+    public BigDecimal promedioSemestral(BigDecimal sumaSemestre) {
+        if (sumaSemestre == null || sumaSemestre.signum() <= 0) return BigDecimal.ZERO.setScale(2);
+        return sumaSemestre.divide(new BigDecimal("6"), 2, RoundingMode.HALF_UP);
+    }
+
     // ------------------------------------------------- Asignación familiar
 
     /** 10% de la RMV. */
@@ -91,6 +121,9 @@ public class CalculadoraPlanilla {
      * Con comisión MIXTA no se descuenta comisión: el componente de flujo es 0% y el de saldo lo cobra el fondo.
      */
     public List<LineaPension> pension(String sistema, Afp afp, String tipoComision, BigDecimal baseAsegurable) {
+        if ("NINGUNO".equalsIgnoreCase(sistema)) {
+            return List.of(); // jubilado / no aportante: sin descuento de pensión
+        }
         if ("AFP".equals(sistema)) {
             if (afp == null) {
                 throw new RuntimeException("El empleado está en AFP pero no tiene un fondo asignado.");

@@ -36,7 +36,8 @@ class ImportacionEmpleadosServiceTest {
 
     private static final String[] COLS = {"tipo_documento", "numero_documento", "nombres", "apellidos", "fecha_nacimiento",
             "fecha_ingreso", "cargo", "area", "correo", "telefono", "sueldo_base", "regimen", "sistema_pensionario", "afp",
-            "cuspp", "tipo_comision_afp", "asignacion_familiar", "banco", "cuenta_bancaria", "banco_cts", "cuenta_cts", "id_marcador"};
+            "cuspp", "tipo_comision_afp", "asignacion_familiar", "banco", "cuenta_bancaria", "banco_cts", "cuenta_cts", "id_marcador",
+            "horas_jornada"};
 
     private EmpleadoRepository empleadoRepo;
     private ImportacionEmpleadosService servicio;
@@ -122,7 +123,7 @@ class ImportacionEmpleadosServiceTest {
             Row cab = libro.getSheet("Empleados").getRow(0);
             assertEquals(COLS.length, cab.getLastCellNum());
             assertEquals("numero_documento", cab.getCell(1).getStringCellValue());
-            assertEquals(6, libro.getSheet("Empleados").getDataValidations().size()); // tipo doc, régimen, AFP, sistema, asig. familiar, comisión
+            assertEquals(7, libro.getSheet("Empleados").getDataValidations().size()); // tipo doc, régimen, AFP, sistema, asig. familiar, comisión, horas
             assertEquals("Régimen General", libro.getSheet("Listas").getRow(1).getCell(1).getStringCellValue());
             // sin fila de ejemplo: nadie debe importar datos falsos por descuido
             assertEquals(0, libro.getSheet("Empleados").getLastRowNum());

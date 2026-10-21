@@ -48,6 +48,7 @@ public class PlanillaServiceImpl implements PlanillaService {
     private final CalculadoraPlanilla calculadora;
     private final CalculadoraAsistencia calculadoraAsistencia;
     private final ReglaTardanzaRepository reglaTardanzaRepository;
+    private final ConceptoRemunerativoRepository conceptoRepository;
     private final PlanillaProperties props;
     private final NotificadorTiempoReal notificador;
 
@@ -87,6 +88,9 @@ public class PlanillaServiceImpl implements PlanillaService {
         RegimenLaboral regimen = empleado.getRegimenLaboral();
         boolean dependiente = !REGIMEN_RXH.equals(regimen.getNombre()); // RxH (4ta categoría) no tiene AFP/ONP/5ta/grati/CTS
         BigDecimal factor = regimen.getFactorLiquidacion() != null ? regimen.getFactorLiquidacion() : BigDecimal.ONE;
+        Integer horasJornada = empleado.getHorasJornada();
+        // Sueldo del mes según la jornada (media jornada = sueldo / 8 x 4 horas), como la planilla de la contadora
+        BigDecimal basicoMensual = calculadora.basicoMensual(empleado.getSueldoBase(), horasJornada);
 
         // 2. Días: 30 comerciales, menos faltas injustificadas y días de vacaciones (que se pagan como movimiento)
         long faltas = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndJustificadaFalseAndFechaBetween(idEmpleado, "FALTA", inicioMes, finMes);
@@ -101,8 +105,9 @@ public class PlanillaServiceImpl implements PlanillaService {
         List<BoletaDetalle> lineas = new ArrayList<>();
 
         // 3. INGRESOS: sueldo proporcional, asignación familiar, movimientos del mes
-        BigDecimal sueldoPagado = calculadora.prorratear(empleado.getSueldoBase(), diasPagados);
-        agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.BASICO, "Remuneración básica (" + diasPagados + " días)", sueldoPagado);
+        BigDecimal sueldoPagado = calculadora.prorratear(basicoMensual, diasPagados);
+        String detalleJornada = horasJornada != null && horasJornada < 8 ? ", jornada de " + horasJornada + " h" : "";
+        agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.BASICO, "Remuneración básica (" + diasPagados + " días" + detalleJornada + ")", sueldoPagado);
 
         BigDecimal asignacionMensual = BigDecimal.ZERO;
         BigDecimal asignacionPagada = BigDecimal.ZERO;
@@ -114,62 +119,68 @@ public class PlanillaServiceImpl implements PlanillaService {
             agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.ASIGNACION_FAMILIAR, "Asignación familiar", asignacionPagada);
         }
 
-        BigDecimal ingresosMovimientos = BigDecimal.ZERO;
+        // Movimientos del mes. Los ingresos "no remunerativos" (condición de trabajo: movilidad, capacitación, bono) se pagan
+        // pero no entran a pensiones/EsSalud (afectaEssalud = false) ni a Renta de 5ta (afectaRenta5ta = false).
+        BigDecimal ingresosAfectos = BigDecimal.ZERO;
+        BigDecimal ingresosNoAfectos5ta = BigDecimal.ZERO;
         for (MovimientoPlanilla mov : movimientos) {
             ConceptoRemunerativo c = mov.getConcepto();
             if ("INGRESO".equals(c.getTipo())) {
                 agregar(lineas, BoletaDetalle.INGRESO, c.getCodigo(), c.getDescripcion(), mov.getMonto());
-                ingresosMovimientos = ingresosMovimientos.add(mov.getMonto());
+                if (!Boolean.FALSE.equals(c.getAfectaEssalud())) ingresosAfectos = ingresosAfectos.add(mov.getMonto());
+                if (Boolean.FALSE.equals(c.getAfectaRenta5ta())) ingresosNoAfectos5ta = ingresosNoAfectos5ta.add(mov.getMonto());
             } else if ("DESCUENTO".equals(c.getTipo())) {
                 agregar(lineas, BoletaDetalle.DESCUENTO, c.getCodigo(), c.getDescripcion(), mov.getMonto());
             }
         }
 
-        // Horas extras autorizadas en la asistencia (las 2 primeras de cada día al 25%, el resto al 35%), sobre el básico
+        // Horas extras autorizadas en la asistencia (las 2 primeras de cada día al 25%, el resto al 35%).
+        // Valor hora = básico del mes / 30 días / horas de la jornada.
         int[] he = asistenciaService.horasExtraAutorizadasDelMes(idEmpleado, mes, anio);
         if (he[0] + he[1] > 0) {
-            BigDecimal valorHora = empleado.getSueldoBase().divide(new BigDecimal("240"), 4, RoundingMode.HALF_UP); // /30 días /8 horas
+            BigDecimal valorHora = calculadora.valorHora(basicoMensual, horasJornada);
             if (he[0] > 0) {
                 BigDecimal m25 = valorHora.multiply(new BigDecimal("1.25")).multiply(new BigDecimal(he[0])).setScale(2, RoundingMode.HALF_UP);
                 agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.HORAS_EXTRAS_25, "Horas extras 25% (" + he[0] + " h, asistencia)", m25);
-                ingresosMovimientos = ingresosMovimientos.add(m25);
+                ingresosAfectos = ingresosAfectos.add(m25);
             }
             if (he[1] > 0) {
                 BigDecimal m35 = valorHora.multiply(new BigDecimal("1.35")).multiply(new BigDecimal(he[1])).setScale(2, RoundingMode.HALF_UP);
                 agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.HORAS_EXTRAS_35, "Horas extras 35% (" + he[1] + " h, asistencia)", m35);
-                ingresosMovimientos = ingresosMovimientos.add(m35);
+                ingresosAfectos = ingresosAfectos.add(m35);
             }
         }
 
-        // Remuneración sobre la que se aporta a pensiones y EsSalud (la gratificación NO entra: es inafecta)
-        BigDecimal baseAfecta = sueldoPagado.add(asignacionPagada).add(ingresosMovimientos);
-
-        // 4. GRATIFICACIÓN (julio y diciembre) + bonificación extraordinaria
-        BigDecimal fijaMensual = empleado.getSueldoBase().add(asignacionMensual);
-        if (dependiente && (mes == 7 || mes == 12)) {
-            int meses = calculadora.mesesComputablesGratificacion(empleado.getFechaIngreso(), ym);
-            long faltasSemestre = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndJustificadaFalseAndFechaBetween(idEmpleado, "FALTA",
-                    calculadora.inicioSemestreGratificacion(ym), calculadora.finSemestreGratificacion(ym));
-            Gratificacion g = calculadora.gratificacion(fijaMensual, factor, meses, faltasSemestre);
-            if (g.neta().signum() > 0) {
-                agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.GRATIFICACION,
-                        "Gratificación " + (mes == 7 ? "Fiestas Patrias" : "Navidad") + " (" + g.mesesComputables() + "/6 meses)", g.neta());
-                agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.BONIF_EXTRAORDINARIA,
-                        "Bonificación extraordinaria (" + props.getBonificacionExtraordinariaPct().movePointRight(2).stripTrailingZeros().toPlainString() + "%)",
-                        g.bonificacionExtraordinaria());
-            }
-        }
-
-        // 5. DESCUENTOS: tardanzas, pensión (ONP/AFP) y Renta de 5ta
-        // Tardanzas: tabla del comunicado de la empresa (monto fijo por tramo o medio día) y un día adicional
-        // al llegar a N tardanzas en el mes. Las tardanzas justificadas con documentación no se descuentan.
+        // 4. Tardanzas: tabla del comunicado de la empresa (monto fijo por tramo o medio día) y un día adicional
+        // al llegar a N tardanzas en el mes. Las justificadas con documentación no se descuentan. Como en la planilla
+        // de la contadora, el descuento REDUCE la remuneración afecta (pensión, EsSalud y Renta de 5ta se calculan sin él).
         List<Integer> tardanzas = asistenciaService.minutosTardanzaInjustificadaDelMes(idEmpleado, mes, anio);
         DescuentoTardanzas dt = calculadoraAsistencia.descuentoTardanzas(
-                tardanzas, empleado.getSueldoBase(), reglaTardanzaRepository.findAllByOrderByDesdeMinutoAsc());
+                tardanzas, basicoMensual, reglaTardanzaRepository.findAllByOrderByDesdeMinutoAsc());
         agregar(lineas, BoletaDetalle.DESCUENTO, null, "Descuento por tardanzas (" + dt.cantidad() + ")", dt.montoTramos());
         agregar(lineas, BoletaDetalle.DESCUENTO, null,
                 "Descuento de 1 día adicional (" + dt.cantidad() + " tardanzas en el mes)", dt.montoDiaAdicional());
+        BigDecimal descuentoTardanzas = dt.montoTramos().add(dt.montoDiaAdicional());
 
+        // Remuneración sobre la que se aporta a pensiones y EsSalud (la gratificación NO entra: es inafecta)
+        BigDecimal baseAfecta = sueldoPagado.add(asignacionPagada).add(ingresosAfectos).subtract(descuentoTardanzas).max(BigDecimal.ZERO);
+
+        // 5. GRATIFICACIÓN (julio y diciembre) + bonificación extraordinaria.
+        // Computable = básico + asignación familiar + promedio del semestre de horas extras y comisiones (suma / 6).
+        BigDecimal fijaMensual = basicoMensual.add(asignacionMensual);
+        if (dependiente && (mes == 7 || mes == 12)) {
+            DetalleGratificacion g = detalleGratificacion(empleado, ym, factor, basicoMensual, asignacionMensual, sumaVariables(lineas));
+            if (g.neta().signum() > 0) {
+                String promedio = g.promedioVariable().signum() > 0 ? ", con promedio de variables S/ " + g.promedioVariable() : "";
+                agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.GRATIFICACION,
+                        "Gratificación " + (mes == 7 ? "Fiestas Patrias" : "Navidad") + " (" + g.meses() + "/6 meses" + promedio + ")", g.neta());
+                agregar(lineas, BoletaDetalle.INGRESO, CodigosPlame.BONIF_EXTRAORDINARIA,
+                        "Bonificación extraordinaria (" + props.getBonificacionExtraordinariaPct().movePointRight(2).stripTrailingZeros().toPlainString() + "%)",
+                        g.bonificacion());
+            }
+        }
+
+        // 6. DESCUENTOS: pensión (ONP / AFP / ninguno) y Renta de 5ta
         BigDecimal renta5ta = BigDecimal.ZERO;
         BigDecimal essaludEmpleador = BigDecimal.ZERO;
         BigDecimal depositoCts = BigDecimal.ZERO;
@@ -180,16 +191,25 @@ public class PlanillaServiceImpl implements PlanillaService {
                 agregar(lineas, BoletaDetalle.DESCUENTO, l.codigo(), l.descripcion(), l.monto());
             }
 
-            renta5ta = calcularRenta5ta(empleado, ym, factor, fijaMensual, suma(lineas, BoletaDetalle.INGRESO));
+            // Ingreso del mes afecto a 5ta: todo lo pagado, menos lo no remunerativo y menos las tardanzas
+            BigDecimal ingresoAfecto5ta = suma(lineas, BoletaDetalle.INGRESO).subtract(ingresosNoAfectos5ta)
+                    .subtract(descuentoTardanzas).max(BigDecimal.ZERO);
+            renta5ta = calcularRenta5ta(empleado, ym, factor, fijaMensual, ingresoAfecto5ta);
             agregar(lineas, BoletaDetalle.DESCUENTO, CodigosPlame.RENTA_5TA, "Renta de 5ta categoría", renta5ta);
 
-            // 6. Costos del empleador (informativos, no restan al neto)
+            // 7. Costos del empleador (informativos, no restan al neto)
             essaludEmpleador = calculadora.essaludEmpleador(baseAfecta);
             agregar(lineas, BoletaDetalle.INFORMATIVO, CodigosPlame.ESSALUD,
                     "EsSalud empleador (" + props.getEssaludPct().movePointRight(2).stripTrailingZeros().toPlainString() + "%)", essaludEmpleador);
 
-            if ((mes == 5 || mes == 11) && factor.signum() > 0) {
-                depositoCts = calcularCts(empleado, ym, factor, fijaMensual, lineas);
+            // CTS en mayo y noviembre (a tiempo parcial, menos de 4 horas, no corresponde)
+            if ((mes == 5 || mes == 11) && factor.signum() > 0 && calculadora.tieneCts(horasJornada)) {
+                DetalleCts cts = detalleCts(empleado, ym, factor, basicoMensual, asignacionMensual);
+                if (cts.monto().signum() > 0) {
+                    agregar(lineas, BoletaDetalle.INFORMATIVO, null,
+                            "CTS a depositar (" + cts.meses() + " meses y " + cts.dias() + " días)", cts.monto());
+                }
+                depositoCts = cts.monto();
             }
         }
 
@@ -271,31 +291,206 @@ public class PlanillaServiceImpl implements PlanillaService {
         return ingreso;
     }
 
-    /** CTS de mayo/noviembre: remuneración + 1/6 de la última gratificación. Se informa, no se paga en la boleta. */
-    private BigDecimal calcularCts(Empleado empleado, YearMonth ym, BigDecimal factor, BigDecimal fijaMensual, List<BoletaDetalle> lineas) {
+    // ------------------------------------------------------- gratificación y CTS (desglose para boleta y constancias)
+
+    @Override
+    @Transactional(readOnly = true)
+    public DetalleGratificacion detalleGratificacion(Integer idEmpleado, String periodo) {
+        validarPeriodo(periodo);
+        YearMonth ym = YearMonth.parse(periodo);
+        if (ym.getMonthValue() != 7 && ym.getMonthValue() != 12) {
+            throw new RuntimeException("La gratificación se liquida en julio y diciembre (periodo " + periodo + ").");
+        }
+        Empleado e = empleadoRepository.findById(idEmpleado).orElseThrow(() -> new RuntimeException("Empleado no encontrado."));
+        BigDecimal factor = e.getRegimenLaboral().getFactorLiquidacion() != null ? e.getRegimenLaboral().getFactorLiquidacion() : BigDecimal.ONE;
+        BigDecimal basico = calculadora.basicoMensual(e.getSueldoBase(), e.getHorasJornada());
+        // Variables del propio mes (diciembre pertenece a su semestre): las de la boleta ya procesada, si existe
+        BigDecimal variablesMes = boletaRepository.findByPlanilla_PeriodoAndEmpleado_IdEmpleado(periodo, idEmpleado)
+                .map(b -> sumaVariables(b.getDetalle())).orElse(BigDecimal.ZERO);
+        return detalleGratificacion(e, ym, factor, basico, asignacionMensual(e), variablesMes);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DetalleCts detalleCts(Integer idEmpleado, String periodo) {
+        validarPeriodo(periodo);
+        YearMonth ym = YearMonth.parse(periodo);
+        if (ym.getMonthValue() != 5 && ym.getMonthValue() != 11) {
+            throw new RuntimeException("La CTS se deposita en mayo y noviembre (periodo " + periodo + ").");
+        }
+        Empleado e = empleadoRepository.findById(idEmpleado).orElseThrow(() -> new RuntimeException("Empleado no encontrado."));
+        BigDecimal factor = e.getRegimenLaboral().getFactorLiquidacion() != null ? e.getRegimenLaboral().getFactorLiquidacion() : BigDecimal.ONE;
+        if (!calculadora.tieneCts(e.getHorasJornada())) {
+            throw new RuntimeException("El trabajador tiene jornada menor a 4 horas: no le corresponde CTS.");
+        }
+        return detalleCts(e, ym, factor, calculadora.basicoMensual(e.getSueldoBase(), e.getHorasJornada()), asignacionMensual(e));
+    }
+
+    /** Asignación familiar mensual que le toca (la tiene marcada y su régimen la paga); 0 si no. */
+    private BigDecimal asignacionMensual(Empleado e) {
+        boolean dependiente = !REGIMEN_RXH.equals(e.getRegimenLaboral().getNombre());
+        if (dependiente && Boolean.TRUE.equals(e.getAsignacionFamiliar()) && Boolean.TRUE.equals(e.getRegimenLaboral().getAsignacionFamiliar())) {
+            return calculadora.asignacionFamiliarMensual();
+        }
+        return BigDecimal.ZERO;
+    }
+
+    /**
+     * Gratificación del semestre: computable = básico + asignación + promedio (suma / 6) de horas extras y comisiones del
+     * semestre; meses completos; 1/180 por falta injustificada; bonificación extraordinaria 9%.
+     */
+    private DetalleGratificacion detalleGratificacion(Empleado e, YearMonth ym, BigDecimal factor, BigDecimal basico,
+                                                      BigDecimal asignacion, BigDecimal variablesMesActual) {
+        LocalDate desde = calculadora.inicioSemestreGratificacion(ym);
+        LocalDate hasta = calculadora.finSemestreGratificacion(ym);
+        int meses = calculadora.mesesComputablesGratificacion(e.getFechaIngreso(), ym);
+        long faltas = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndJustificadaFalseAndFechaBetween(e.getIdEmpleado(), "FALTA", desde, hasta);
+        BigDecimal promedio = calculadora.promedioSemestral(sumaVariables(e.getIdEmpleado(), desde, hasta, ym, variablesMesActual));
+        BigDecimal computable = basico.add(asignacion).add(promedio);
+        Gratificacion g = calculadora.gratificacion(computable, factor, meses, faltas);
+        LocalDate desdeReal = e.getFechaIngreso() != null && e.getFechaIngreso().isAfter(desde) ? e.getFechaIngreso() : desde;
+        return new DetalleGratificacion(ym.toString(), desdeReal, hasta, meses, basico, asignacion, promedio, computable, factor,
+                g.bruta(), faltas, g.descuentoFaltas(), g.neta(), g.bonificacionExtraordinaria(), g.neta().add(g.bonificacionExtraordinaria()));
+    }
+
+    /**
+     * CTS de mayo (nov-abr) o noviembre (may-oct): computable = básico + asignación + promedio de horas extras y comisiones
+     * del semestre + 1/6 de la última gratificación. Monto = computable / 12 por mes y / 360 por día. Se informa, no se paga en la boleta.
+     */
+    private DetalleCts detalleCts(Empleado e, YearMonth ym, BigDecimal factor, BigDecimal basico, BigDecimal asignacion) {
         int mes = ym.getMonthValue();
         String periodoGrati = mes == 5 ? (ym.getYear() - 1) + "-12" : ym.getYear() + "-07";
+        LocalDate desde = calculadora.inicioSemestreCts(ym);
+        LocalDate hasta = calculadora.finSemestreCts(ym);
+        BigDecimal fijaMensual = basico.add(asignacion);
 
-        // 1/6 de la última gratificación pagada (equivalente a régimen completo); si no hay boleta, la teórica
-        BigDecimal gratiCompleta = boletaRepository
-                .findByPlanilla_PeriodoAndEmpleado_IdEmpleado(periodoGrati, empleado.getIdEmpleado())
+        // 1/6 de la última gratificación pagada (llevada a régimen completo; el factor se aplica al final); si no hay boleta, la teórica
+        BigDecimal gratiBase = boletaRepository
+                .findByPlanilla_PeriodoAndEmpleado_IdEmpleado(periodoGrati, e.getIdEmpleado())
                 .flatMap(b -> b.getDetalle().stream()
                         .filter(d -> CodigosPlame.GRATIFICACION.equals(d.getCodigo()))
                         .map(BoletaDetalle::getMonto)
                         .findFirst())
-                .map(monto -> monto.divide(factor, 2, RoundingMode.HALF_UP))
+                .map(monto -> factor.signum() > 0 ? monto.divide(factor, 2, RoundingMode.HALF_UP) : monto)
                 .orElse(fijaMensual);
-        BigDecimal sextoGrati = gratiCompleta.divide(new BigDecimal("6"), 2, RoundingMode.HALF_UP);
-        BigDecimal computable = fijaMensual.add(sextoGrati);
+        BigDecimal sextoGrati = gratiBase.divide(new BigDecimal("6"), 2, RoundingMode.HALF_UP);
+        BigDecimal promedio = calculadora.promedioSemestral(sumaVariables(e.getIdEmpleado(), desde, hasta, ym, BigDecimal.ZERO));
+        BigDecimal computable = fijaMensual.add(promedio).add(sextoGrati);
 
-        long faltasSemestre = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndJustificadaFalseAndFechaBetween(empleado.getIdEmpleado(), "FALTA",
-                calculadora.inicioSemestreCts(ym), calculadora.finSemestreCts(ym));
-        Cts cts = calculadora.cts(computable, factor, empleado.getFechaIngreso(), ym, faltasSemestre);
-        if (cts.monto().signum() > 0) {
-            agregar(lineas, BoletaDetalle.INFORMATIVO, null,
-                    "CTS a depositar (" + cts.meses() + " meses y " + cts.dias() + " días)", cts.monto());
+        long faltas = asistenciaRepository.countByEmpleado_IdEmpleadoAndEstadoAndJustificadaFalseAndFechaBetween(e.getIdEmpleado(), "FALTA", desde, hasta);
+        Cts cts = calculadora.cts(computable, factor, e.getFechaIngreso(), ym, faltas);
+        LocalDate desdeReal = e.getFechaIngreso() != null && e.getFechaIngreso().isAfter(desde) ? e.getFechaIngreso() : desde;
+        return new DetalleCts(ym.toString(), desdeReal, hasta, cts.meses(), cts.dias(), basico, asignacion, promedio, gratiBase,
+                sextoGrati, computable, factor, faltas, cts.monto());
+    }
+
+    /** Suma de horas extras y comisiones pagadas en las boletas de los meses [desde, hasta]; el mes en curso usa sus propias líneas. */
+    private BigDecimal sumaVariables(Integer idEmpleado, LocalDate desde, LocalDate hasta, YearMonth actual, BigDecimal variablesActual) {
+        BigDecimal suma = BigDecimal.ZERO;
+        for (YearMonth m = YearMonth.from(desde); !m.isAfter(YearMonth.from(hasta)); m = m.plusMonths(1)) {
+            if (m.equals(actual)) {
+                suma = suma.add(variablesActual);
+                continue;
+            }
+            suma = suma.add(boletaRepository.findByPlanilla_PeriodoAndEmpleado_IdEmpleado(m.toString(), idEmpleado)
+                    .map(b -> sumaVariables(b.getDetalle())).orElse(BigDecimal.ZERO));
         }
-        return cts.monto();
+        return suma;
+    }
+
+    private BigDecimal sumaVariables(List<BoletaDetalle> lineas) {
+        return lineas.stream()
+                .filter(l -> BoletaDetalle.INGRESO.equals(l.getTipo()) && l.getCodigo() != null
+                        && CodigosPlame.VARIABLES_PROMEDIABLES.contains(l.getCodigo()))
+                .map(BoletaDetalle::getMonto)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    // ----------------------------------------------------------------- quincena
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Quincena> calcularQuincena(String periodo) {
+        validarPeriodo(periodo);
+        YearMonth ym = YearMonth.parse(periodo);
+        LocalDate dia15 = ym.atDay(15);
+        List<Quincena> filas = new ArrayList<>();
+        for (Empleado e : empleadoRepository.findAll()) {
+            if (e.getFechaIngreso() != null && e.getFechaIngreso().isAfter(dia15)) continue;   // entra después de la quincena
+            if (e.getFechaCese() != null && e.getFechaCese().isBefore(dia15)) continue;        // cesó antes
+            if (!"ACTIVO".equals(e.getEstado()) && e.getFechaCese() == null) continue;
+            filas.add(quincenaDe(e, ym));
+        }
+        filas.sort(java.util.Comparator.comparing(Quincena::empleado, String.CASE_INSENSITIVE_ORDER));
+        return filas;
+    }
+
+    /**
+     * Adelanto = (básico + asignación) / 2 − pensión sobre esa mitad − mitad de la Renta de 5ta del mes anterior,
+     * como la columna "1RA QUINC." de la planilla de la contadora.
+     */
+    private Quincena quincenaDe(Empleado e, YearMonth ym) {
+        boolean dependiente = !REGIMEN_RXH.equals(e.getRegimenLaboral().getNombre());
+        BigDecimal basico = calculadora.basicoMensual(e.getSueldoBase(), e.getHorasJornada());
+        BigDecimal asignacion = asignacionMensual(e);
+        BigDecimal dos = new BigDecimal("2");
+        BigDecimal mitad = basico.add(asignacion).divide(dos, 2, RoundingMode.HALF_UP);
+        BigDecimal pension = BigDecimal.ZERO;
+        if (dependiente) {
+            for (LineaPension l : calculadora.pension(e.getSistemaPensionario(), e.getAfp(), e.getTipoComisionAfp(), mitad)) {
+                pension = pension.add(l.monto());
+            }
+        }
+        BigDecimal renta = boletaRepository.findByPlanilla_PeriodoAndEmpleado_IdEmpleado(ym.minusMonths(1).toString(), e.getIdEmpleado())
+                .map(BoletaPago::getRenta5taRetenida)
+                .filter(java.util.Objects::nonNull)
+                .orElse(BigDecimal.ZERO)
+                .divide(dos, 2, RoundingMode.HALF_UP);
+        BigDecimal adelanto = mitad.subtract(pension).subtract(renta).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+        boolean registrado = movimientoRepository
+                .findFirstByEmpleado_IdEmpleadoAndPeriodoAndConcepto_Codigo(e.getIdEmpleado(), ym.toString(), CodigosPlame.ADELANTO).isPresent();
+        return new Quincena(e.getIdEmpleado(), e.getNombres() + " " + e.getApellidos(),
+                e.getTipoDocumento() != null ? e.getTipoDocumento() : "DNI", e.getDni(), e.getBanco(), e.getCuentaBancaria(),
+                basico, asignacion, pension, renta, adelanto, registrado);
+    }
+
+    @Override
+    @Transactional
+    public List<Quincena> registrarQuincena(String periodo) {
+        validarPeriodo(periodo);
+        planillaRepository.findByPeriodo(periodo)
+                .filter(p -> PlanillaCabecera.CERRADA.equals(p.getEstado()))
+                .ifPresent(p -> {
+                    throw new RuntimeException("La planilla " + periodo + " está cerrada: no se puede registrar la quincena.");
+                });
+        ConceptoRemunerativo adelanto = conceptoRepository.findByCodigo(CodigosPlame.ADELANTO)
+                .orElseThrow(() -> new RuntimeException("Falta el concepto 0701 (adelanto de remuneración): reinicia el sistema para sembrarlo."));
+        List<Quincena> resultado = new ArrayList<>();
+        for (Quincena q : calcularQuincena(periodo)) {
+            if (q.adelanto().signum() <= 0) {
+                resultado.add(q);
+                continue;
+            }
+            MovimientoPlanilla m = movimientoRepository
+                    .findFirstByEmpleado_IdEmpleadoAndPeriodoAndConcepto_Codigo(q.idEmpleado(), periodo, CodigosPlame.ADELANTO)
+                    .orElseGet(() -> {
+                        MovimientoPlanilla nuevo = new MovimientoPlanilla();
+                        nuevo.setEmpleado(empleadoRepository.getReferenceById(q.idEmpleado()));
+                        nuevo.setConcepto(adelanto);
+                        nuevo.setPeriodo(periodo);
+                        return nuevo;
+                    });
+            m.setMonto(q.adelanto());
+            MovimientoPlanilla guardado = movimientoRepository.save(m);
+            // Mismo formato que la pantalla de movimientos espera en vivo
+            notificador.publicar("movimientos", "CREADO", guardado.getIdMovimiento(), java.util.Map.of(
+                    "idMovimiento", guardado.getIdMovimiento(), "idEmpleado", q.idEmpleado(), "empleado", q.empleado(),
+                    "codigoConcepto", adelanto.getCodigo(), "concepto", adelanto.getDescripcion(), "tipo", "DESCUENTO",
+                    "periodo", periodo, "monto", q.adelanto()));
+            resultado.add(new Quincena(q.idEmpleado(), q.empleado(), q.tipoDocumento(), q.documento(), q.banco(), q.cuenta(),
+                    q.basico(), q.asignacionFamiliar(), q.pension(), q.renta5ta(), q.adelanto(), true));
+        }
+        return resultado;
     }
 
     @Override

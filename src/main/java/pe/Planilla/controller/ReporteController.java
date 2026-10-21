@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import pe.Planilla.model.dto.BoletaGeneradaDTO;
 import pe.Planilla.model.dto.LineaBoletaDTO;
 import pe.Planilla.service.BoletaPdfService;
+import pe.Planilla.service.ConstanciaPdfService;
 import pe.Planilla.service.CorreoService;
 import pe.Planilla.service.ExportacionService;
 import pe.Planilla.service.PlanillaService;
@@ -27,6 +28,7 @@ public class ReporteController {
     private static final MediaType XLSX = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
     private final BoletaPdfService pdfService;
+    private final ConstanciaPdfService constanciaService;
     private final CorreoService correoService;
     private final ExportacionService exportacionService;
     private final PlanillaService planillaService;
@@ -42,6 +44,25 @@ public class ReporteController {
     @GetMapping("/planillas/{periodo}/boletas.pdf")
     public ResponseEntity<byte[]> boletasPeriodoPdf(@PathVariable String periodo) {
         return archivo(pdfService.generarPeriodo(periodo), MediaType.APPLICATION_PDF, "boletas-" + periodo + ".pdf", true);
+    }
+
+    // Constancias para el trabajador (como las hojas "Certificado" de la contadora): sin idEmpleado salen todas en un PDF
+    @GetMapping("/planillas/{periodo}/constancias/gratificacion.pdf")
+    public ResponseEntity<byte[]> constanciaGratificacion(@PathVariable String periodo, @RequestParam(required = false) Integer idEmpleado) {
+        return archivo(constanciaService.gratificacion(periodo, idEmpleado), MediaType.APPLICATION_PDF,
+                "liquidacion-gratificacion-" + periodo + ".pdf", idEmpleado == null);
+    }
+
+    @GetMapping("/planillas/{periodo}/constancias/cts.pdf")
+    public ResponseEntity<byte[]> constanciaCts(@PathVariable String periodo, @RequestParam(required = false) Integer idEmpleado) {
+        return archivo(constanciaService.cts(periodo, idEmpleado), MediaType.APPLICATION_PDF,
+                "liquidacion-cts-" + periodo + ".pdf", idEmpleado == null);
+    }
+
+    // Adelanto de la 1ra quincena en Excel (para el banco)
+    @GetMapping("/planillas/{periodo}/quincena.xlsx")
+    public ResponseEntity<byte[]> quincena(@PathVariable String periodo) {
+        return archivo(exportacionService.quincena(periodo), XLSX, "quincena-" + periodo + ".xlsx", true);
     }
 
     // --------------------------------------------------------------- correo

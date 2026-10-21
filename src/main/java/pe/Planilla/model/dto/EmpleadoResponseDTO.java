@@ -18,6 +18,7 @@ public class EmpleadoResponseDTO {
     private String correo;
     private String telefono;
     private BigDecimal sueldoBase;
+    private Integer horasJornada;  // 8 = jornada completa
     private String banco;
     private String cuentaBancaria;
     private String bancoCts;

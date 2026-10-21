@@ -13,4 +13,7 @@ public interface MovimientoPlanillaRepository extends JpaRepository<MovimientoPl
 
     // Todos los movimientos del mes, los más recientes primero (pantalla de movimientos)
     List<MovimientoPlanilla> findByPeriodoOrderByIdMovimientoDesc(String periodo);
+
+    // Un movimiento de un concepto dado (p. ej. el adelanto de quincena 0701) para no registrarlo dos veces
+    java.util.Optional<MovimientoPlanilla> findFirstByEmpleado_IdEmpleadoAndPeriodoAndConcepto_Codigo(Integer idEmpleado, String periodo, String codigo);
 }

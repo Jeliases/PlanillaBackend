@@ -18,12 +18,13 @@ public class EmpleadoRequestDTO {
     private String correo;
     private String telefono;
     private BigDecimal sueldoBase;
+    private Integer horasJornada;      // 8 (por defecto) = jornada completa; 4 = media jornada (básico proporcional)
     private String banco;
     private String cuentaBancaria;
     private String bancoCts;
     private String cuentaCts;
     private Integer idRegimen; // Solo pedimos el ID del régimen, no el objeto completo
-    private String sistemaPensionario; // "ONP" (por defecto) o "AFP"
+    private String sistemaPensionario; // "ONP" (por defecto), "AFP" o "NINGUNO" (no aportante)
     private Integer idAfp;             // obligatorio si el sistema es AFP
     private String cuspp;
     private String tipoComisionAfp;    // FLUJO (por defecto) o MIXTA (no paga comisión por flujo)

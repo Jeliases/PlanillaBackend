@@ -15,6 +15,7 @@ import pe.Planilla.model.dto.ImportacionArchivoDTO;
 import pe.Planilla.model.dto.ImportacionEmpleadosDTO;
 import pe.Planilla.service.ActualizacionEmpleadosService;
 import pe.Planilla.service.EmpleadoService;
+import pe.Planilla.service.EmpleadoLimpiezaService;
 import pe.Planilla.service.ImportacionEmpleadosService;
 
 import java.util.Arrays;
@@ -30,6 +31,7 @@ public class EmpleadoController {
             MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
     private final EmpleadoService empleadoService;
+    private final EmpleadoLimpiezaService limpiezaService;
     private final ImportacionEmpleadosService importacionService;
     private final ActualizacionEmpleadosService actualizacionService;
 
@@ -65,6 +67,13 @@ public class EmpleadoController {
     @PostMapping("/{id}/cesar")
     public ResponseEntity<EmpleadoResponseDTO> cesar(@PathVariable Integer id, @RequestBody CeseDTO dto) {
         return ResponseEntity.ok(empleadoService.cesar(id, dto.getFechaCese(), dto.getMotivo()));
+    }
+
+    // Borrar un trabajador ingresado por error (solo si no tiene boletas; si no, usar /cesar). Borra tambien sus asistencias, movimientos y horarios.
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> eliminar(@PathVariable Integer id) {
+        limpiezaService.eliminar(id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/reactivar")

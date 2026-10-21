@@ -123,7 +123,7 @@ class ImportacionEmpleadosServiceTest {
             assertNotNull(libro.getSheet("Listas"));
             Row cab = libro.getSheet("Empleados").getRow(0);
             // Los campos y el orden de la hoja «PLANILLA DE ASESORES» de la contadora, y después las opcionales
-            assertEquals(27, cab.getLastCellNum());
+            assertEquals(33, cab.getLastCellNum());
             assertEquals("N°", cab.getCell(0).getStringCellValue());
             assertEquals("COD", cab.getCell(1).getStringCellValue());
             assertEquals("NOMBRE DEL TRABAJADOR", cab.getCell(2).getStringCellValue());
@@ -132,7 +132,9 @@ class ImportacionEmpleadosServiceTest {
             assertEquals("TIPO DE COMISIÓN", cab.getCell(14).getStringCellValue());
             assertEquals("BASICO", cab.getCell(15).getStringCellValue());
             assertEquals("hras", cab.getCell(16).getStringCellValue());
-            assertEquals("ASIG. FAM.", cab.getCell(17).getStringCellValue());
+            // Mismas posiciones que la hoja de la contadora (A..X), para poder pegar sus filas tal cual
+            String[] comoLaHoja = {"BASICO", "DM", "PERMISO", " FL/ SUS", "D.E.L", "TOTAL INGRSOS", "ASIG. FAM.", "TIPO DOCUMENTO"};
+            for (int i = 0; i < comoLaHoja.length; i++) assertEquals(comoLaHoja[i], cab.getCell(17 + i).getStringCellValue(), "columna " + (17 + i));
             assertEquals(6, libro.getSheet("Empleados").getDataValidations().size()); // tipo doc, régimen laboral, pensión, horas, asig. familiar, comisión
             assertEquals("Régimen General", libro.getSheet("Listas").getRow(1).getCell(1).getStringCellValue());
             assertEquals("ONP", libro.getSheet("Listas").getRow(1).getCell(2).getStringCellValue());

@@ -68,6 +68,14 @@ public class ImportacionEmpleadosService {
             new Columna("tipocomisionafp", "TIPO DE COMISIÓN", false, "Com.Flujo (por defecto) o Com.Mixta (no paga comisión por flujo).", "Com.Flujo"),
             new Columna("sueldobase", "BASICO", true, "Sueldo mensual a jornada completa, en soles, sin «S/».", "1500.00"),
             new Columna("horasjornada", "hras", false, "Horas de trabajo al día: 8 (completa), 6 o 4 (media jornada: el básico se paga proporcional). Vacío = 8.", "8"),
+            // Columnas del mes que la hoja de la contadora tiene entre «hras» y «ASIG. FAM.»: se dejan en el mismo lugar para que
+            // se puedan pegar sus filas tal cual; el importador las ignora (el segundo BASICO no pisa al primero).
+            new Columna("basicomes", "BASICO", false, "Básico del mes (lo calcula la planilla; no se usa).", ""),
+            new Columna("dm", "DM", false, "Días del mes (no se usa).", ""),
+            new Columna("permiso", "PERMISO", false, "(no se usa)", ""),
+            new Columna("flsus", " FL/ SUS", false, "(no se usa)", ""),
+            new Columna("del", "D.E.L", false, "(no se usa)", ""),
+            new Columna("totalingrsos", "TOTAL INGRSOS", false, "(no se usa)", ""),
             new Columna("asignacionfamiliar", "ASIG. FAM.", false, "SI o NO (también vale el monto, 123.00). Vacío = NO.", "NO"),
             // --- opcionales que la hoja de la contadora no trae
             new Columna("tipodocumento", "TIPO DOCUMENTO", false, "DNI o CE. Vacío = DNI.", "DNI"),

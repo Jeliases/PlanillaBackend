@@ -262,6 +262,8 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         dto.setIdEmpleado(e.getIdEmpleado());
         dto.setTipoDocumento(e.getTipoDocumento() != null ? e.getTipoDocumento() : TipoDocumento.DNI.name());
         dto.setNombresCompletos(e.getNombres() + " " + e.getApellidos());
+        dto.setNombres(e.getNombres());
+        dto.setApellidos(e.getApellidos());
         dto.setDni(e.getDni());
         dto.setIdMarcador(e.getIdMarcador());
         dto.setFechaNacimiento(e.getFechaNacimiento());

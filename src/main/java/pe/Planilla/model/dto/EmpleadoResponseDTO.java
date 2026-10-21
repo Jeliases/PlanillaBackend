@@ -9,6 +9,8 @@ public class EmpleadoResponseDTO {
     private Integer idEmpleado;
     private String tipoDocumento;
     private String nombresCompletos;
+    private String nombres;        // por separado, para editar
+    private String apellidos;
     private String dni;            // número del documento de identidad
     private String idMarcador;     // ID en el reloj biométrico (null = el documento)
     private LocalDate fechaNacimiento;

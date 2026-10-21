@@ -16,4 +16,6 @@ public interface MovimientoPlanillaRepository extends JpaRepository<MovimientoPl
 
     // Un movimiento de un concepto dado (p. ej. el adelanto de quincena 0701) para no registrarlo dos veces
     java.util.Optional<MovimientoPlanilla> findFirstByEmpleado_IdEmpleadoAndPeriodoAndConcepto_Codigo(Integer idEmpleado, String periodo, String codigo);
+    // Limpieza: se usa al borrar un trabajador que nunca tuvo boletas
+    void deleteByEmpleado_IdEmpleado(Integer idEmpleado);
 }

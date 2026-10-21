@@ -19,4 +19,6 @@ public interface BoletaPagoRepository extends JpaRepository<BoletaPago, Integer>
 
     /** Boletas de un empleado en un año: prefijo "2026-" (para acumular ingresos y retenciones de Renta 5ta). */
     List<BoletaPago> findByPlanilla_PeriodoStartingWithAndEmpleado_IdEmpleado(String prefijoAnio, Integer idEmpleado);
+    // Un trabajador con boletas procesadas no se puede borrar (solo cesar)
+    boolean existsByEmpleado_IdEmpleado(Integer idEmpleado);
 }

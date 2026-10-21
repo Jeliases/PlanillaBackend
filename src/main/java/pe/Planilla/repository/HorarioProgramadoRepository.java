@@ -14,4 +14,6 @@ public interface HorarioProgramadoRepository extends JpaRepository<HorarioProgra
     Optional<HorarioProgramado> findFirstByEmpleado_IdEmpleadoAndFecha(Integer idEmpleado, LocalDate fecha);
 
     List<HorarioProgramado> findByFechaBetween(LocalDate desde, LocalDate hasta);
+    // Limpieza: se usa al borrar un trabajador que nunca tuvo boletas
+    void deleteByEmpleado_IdEmpleado(Integer idEmpleado);
 }

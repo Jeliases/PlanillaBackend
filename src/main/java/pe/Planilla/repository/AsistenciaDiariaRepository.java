@@ -31,4 +31,6 @@ public interface AsistenciaDiariaRepository extends JpaRepository<AsistenciaDiar
 
     // Registros de un conjunto de empleados en un rango (para actualizar al importar el reloj)
     List<AsistenciaDiaria> findByFechaBetween(LocalDate desde, LocalDate hasta);
+    // Limpieza: se usa al borrar un trabajador que nunca tuvo boletas
+    void deleteByEmpleado_IdEmpleado(Integer idEmpleado);
 }

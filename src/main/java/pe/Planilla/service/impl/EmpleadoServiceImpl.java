@@ -124,6 +124,10 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         f.setCuentaBancaria(dto.getCuentaBancaria() != null ? dto.getCuentaBancaria() : e.getCuentaBancaria());
         f.setBancoCts(dto.getBancoCts() != null ? dto.getBancoCts() : e.getBancoCts());
         f.setCuentaCts(dto.getCuentaCts() != null ? dto.getCuentaCts() : e.getCuentaCts());
+        f.setSupervisor(dto.getSupervisor() != null ? dto.getSupervisor() : e.getSupervisor());
+        f.setSede(dto.getSede() != null ? dto.getSede() : e.getSede());
+        f.setCartera(dto.getCartera() != null ? dto.getCartera() : e.getCartera());
+        f.setFechaFinContrato(dto.getFechaFinContrato() != null ? dto.getFechaFinContrato() : e.getFechaFinContrato());
         f.setIdRegimen(dto.getIdRegimen() != null ? dto.getIdRegimen() : (e.getRegimenLaboral() != null ? e.getRegimenLaboral().getIdRegimen() : null));
         f.setSistemaPensionario(esVacio(dto.getSistemaPensionario()) ? e.getSistemaPensionario() : dto.getSistemaPensionario());
         boolean cambiaSistema = !esVacio(dto.getSistemaPensionario()) && !dto.getSistemaPensionario().trim().equalsIgnoreCase(e.getSistemaPensionario());
@@ -231,6 +235,10 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         empleado.setCuentaBancaria(limpiar(dto.getCuentaBancaria()));
         empleado.setBancoCts(limpiar(dto.getBancoCts()));
         empleado.setCuentaCts(limpiar(dto.getCuentaCts()));
+        empleado.setSupervisor(limpiar(dto.getSupervisor()));
+        empleado.setSede(limpiar(dto.getSede()));
+        empleado.setCartera(limpiar(dto.getCartera()));
+        empleado.setFechaFinContrato(dto.getFechaFinContrato());
         empleado.setRegimenLaboral(regimen);
         empleado.setSistemaPensionario(sistema);
         empleado.setAfp(afp);
@@ -268,6 +276,10 @@ public class EmpleadoServiceImpl implements EmpleadoService {
         dto.setCuentaBancaria(e.getCuentaBancaria());
         dto.setBancoCts(e.getBancoCts());
         dto.setCuentaCts(e.getCuentaCts());
+        dto.setSupervisor(e.getSupervisor());
+        dto.setSede(e.getSede());
+        dto.setCartera(e.getCartera());
+        dto.setFechaFinContrato(e.getFechaFinContrato());
         dto.setRegimenLaboral(e.getRegimenLaboral().getNombre());
         dto.setEstado(e.getEstado());
         dto.setSistemaPensionario(e.getSistemaPensionario() != null ? e.getSistemaPensionario() : "ONP");

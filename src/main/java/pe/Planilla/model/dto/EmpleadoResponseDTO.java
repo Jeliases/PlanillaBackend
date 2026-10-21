@@ -23,6 +23,10 @@ public class EmpleadoResponseDTO {
     private String cuentaBancaria;
     private String bancoCts;
     private String cuentaCts;
+    private String supervisor;
+    private String sede;
+    private String cartera;
+    private LocalDate fechaFinContrato;
     private String regimenLaboral; // Mostramos el nombre del régimen, no el ID
     private String estado;
     private String sistemaPensionario;

@@ -23,6 +23,11 @@ public class EmpleadoRequestDTO {
     private String cuentaBancaria;
     private String bancoCts;
     private String cuentaCts;
+    private String supervisor;
+    private String sede;
+    private String cartera;
+    private LocalDate fechaFinContrato; // null = indefinido
+    private LocalDate fechaCese;        // solo la usa la importación (trabajadores que ya cesaron)
     private Integer idRegimen; // Solo pedimos el ID del régimen, no el objeto completo
     private String sistemaPensionario; // "ONP" (por defecto), "AFP" o "NINGUNO" (no aportante)
     private Integer idAfp;             // obligatorio si el sistema es AFP

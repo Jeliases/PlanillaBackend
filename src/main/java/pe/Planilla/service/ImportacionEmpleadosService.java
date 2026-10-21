@@ -60,7 +60,7 @@ public class ImportacionEmpleadosService {
             new Columna("correo", false, "Correo electrónico (para enviar la boleta).", "maria.quispe@empresa.com"),
             new Columna("telefono", false, "Celular o teléfono.", "987654321"),
             new Columna("sueldo_base", true, "Sueldo mensual en soles, mayor a 0. Sin el signo S/.", "1500.00"),
-            new Columna("regimen", true, "Elija de la lista (hoja Listas): el nombre debe coincidir.", "Régimen General"),
+            new Columna("regimen", false, "Régimen laboral, de la lista (hoja Listas). Vacío = Régimen General.", "Régimen General"),
             new Columna("sistema_pensionario", false, "ONP, AFP o NINGUNO (jubilado / no aportante). Vacío = ONP (o AFP si indica una AFP).", "AFP"),
             new Columna("afp", false, "Obligatoria si es AFP. Elija de la lista.", "Habitat"),
             new Columna("cuspp", false, "Código CUSPP de la AFP (opcional).", "649871AFMRQ2"),
@@ -71,8 +71,15 @@ public class ImportacionEmpleadosService {
             new Columna("banco_cts", false, "Banco donde se deposita la CTS.", "Interbank"),
             new Columna("cuenta_cts", false, "Número de cuenta de la CTS.", "8983001234567"),
             new Columna("id_marcador", false, "ID con el que marca en el reloj biométrico, si es distinto al documento (ej. 10).", "10"),
-            new Columna("horas_jornada", false, "Horas de trabajo al día: 8 (jornada completa) o 4 (media jornada: el básico se paga proporcional). Vacío = 8.", "8")
+            new Columna("horas_jornada", false, "Horas de trabajo al día: 8 (jornada completa) o 4 (media jornada: el básico se paga proporcional). Vacío = 8.", "8"),
+            new Columna("fecha_fin_contrato", false, "dd/mm/aaaa. Fin del contrato a plazo fijo; vacío o «Indefinido» = sin fecha.", "31/12/2026"),
+            new Columna("supervisor", false, "Supervisor o jefe directo.", "Abel"),
+            new Columna("sede", false, "Sede o lugar de trabajo.", "LIMA"),
+            new Columna("cartera", false, "Cartera o campaña.", "ADM")
     );
+
+    /** Valores de la columna «REGIMEN» de la planilla de la contadora que en realidad son el sistema de pensiones. */
+    private static final Set<String> VALORES_PENSION = Set.of("onp", "afp", "noaportante", "ninguno", "sinaporte", "sinpension", "jubilado");
 
     // Otros nombres que se aceptan para las columnas (el usuario puede escribir "DNI" en vez de numero_documento)
     private static final Map<String, String> ALIAS = Map.ofEntries(
@@ -82,7 +89,23 @@ public class ImportacionEmpleadosService {
             Map.entry("sueldo", "sueldobase"), Map.entry("remuneracion", "sueldobase"),
             Map.entry("sistemapension", "sistemapensionario"), Map.entry("sistema", "sistemapensionario"),
             Map.entry("asignacion", "asignacionfamiliar"), Map.entry("email", "correo"),
-            Map.entry("fechaingresoempresa", "fechaingreso"), Map.entry("fechadenacimiento", "fechanacimiento"));
+            Map.entry("fechaingresoempresa", "fechaingreso"), Map.entry("fechadenacimiento", "fechanacimiento"),
+            // Encabezados de la hoja PLANILLA mensual de la contadora (se acepta tal cual, cabecera en la fila 5)
+            Map.entry("nombredeltrabajador", "nombrecompleto"), Map.entry("nombretrabajador", "nombrecompleto"),
+            Map.entry("trabajador", "nombrecompleto"), Map.entry("apellidosynombres", "nombrecompleto"),
+            Map.entry("nombresyapellidos", "nombrecompleto"), Map.entry("nombrecompleto", "nombrecompleto"),
+            Map.entry("fechadeingreso", "fechaingreso"), Map.entry("ingreso", "fechaingreso"),
+            Map.entry("terminodecontrato", "fechafincontrato"), Map.entry("terminocontrato", "fechafincontrato"),
+            Map.entry("fincontrato", "fechafincontrato"), Map.entry("fechafindecontrato", "fechafincontrato"),
+            Map.entry("fechadecese", "fechacese"), Map.entry("cese", "fechacese"),
+            Map.entry("centrodecostos", "area"), Map.entry("centrodecosto", "area"), Map.entry("centrocostos", "area"),
+            Map.entry("tipodecomision", "tipocomisionafp"), Map.entry("tipocomision", "tipocomisionafp"),
+            Map.entry("basico", "sueldobase"), Map.entry("sueldobasico", "sueldobase"),
+            Map.entry("hras", "horasjornada"), Map.entry("horas", "horasjornada"), Map.entry("jornada", "horasjornada"),
+            Map.entry("asigfam", "asignacionfamiliar"), Map.entry("asignacionfam", "asignacionfamiliar"),
+            Map.entry("cuenta", "cuentabancaria"), Map.entry("nrocuenta", "cuentabancaria"), Map.entry("cci", "cuentabancaria"),
+            Map.entry("cod", "idmarcador"), Map.entry("codigo", "idmarcador"),
+            Map.entry("regimenpensionario", "sistemapensionario"), Map.entry("pension", "sistemapensionario"));
 
     // ================================================================= Plantilla
 
@@ -171,6 +194,9 @@ public class ImportacionEmpleadosService {
                     "CARGA MASIVA DE EMPLEADOS",
                     "1. Llene la hoja «Empleados»: una fila por trabajador. Las columnas con encabezado azul son obligatorias.",
                     "2. No cambie los nombres de los encabezados (el orden de las columnas sí puede variar).",
+                    "   También puede subir la hoja «PLANILLA» del Excel mensual de la contadora tal cual (cabecera en la fila 5):",
+                    "   se leen NOMBRE DEL TRABAJADOR, DNI, fechas, CARGO, SUPERVISOR, SEDE, CENTRO DE COSTOS, CARTERA, REGIMEN (pensión),",
+                    "   CUSPP, TIPO DE COMISIÓN, BASICO, hras, ASIG. FAM., Cuenta y Banco; las columnas del mes se ignoran.",
                     "3. Fechas como dd/mm/aaaa. Montos sin «S/» ni separador de miles.",
                     "4. Régimen, AFP, tipo de documento, sistema pensionario y asignación familiar se eligen de la lista desplegable.",
                     "5. El sistema revisa todo el archivo antes de guardar. Si una fila tiene error, no se guarda ninguna: corrija y vuelva a subirlo.",
@@ -258,14 +284,26 @@ public class ImportacionEmpleadosService {
             Sheet hoja = Optional.ofNullable(libro.getSheet(HOJA)).orElse(libro.getSheetAt(0));
             DataFormatter fmt = new DataFormatter();
 
-            // Encabezados: primera fila con contenido
+            // Encabezados: la fila que tiene «nombre» y «dni/documento» (la hoja de la contadora los tiene en la fila 5,
+            // con filas de fórmulas arriba); si no se encuentra, la primera fila con contenido
             int filaCab = -1;
-            for (int i = 0; i <= Math.min(hoja.getLastRowNum(), 10); i++) {
-                if (!filaVacia(hoja.getRow(i), fmt)) {
+            int primeraConContenido = -1;
+            for (int i = 0; i <= Math.min(hoja.getLastRowNum(), 15); i++) {
+                Row r = hoja.getRow(i);
+                if (filaVacia(r, fmt)) continue;
+                if (primeraConContenido < 0) primeraConContenido = i;
+                boolean tieneNombre = false, tieneDocumento = false;
+                for (Cell c : r) {
+                    String k = ALIAS.getOrDefault(clave(fmt.formatCellValue(c)), clave(fmt.formatCellValue(c)));
+                    if (k.startsWith("nombre")) tieneNombre = true;
+                    if (k.equals("numerodocumento")) tieneDocumento = true;
+                }
+                if (tieneNombre && tieneDocumento) {
                     filaCab = i;
                     break;
                 }
             }
+            if (filaCab < 0) filaCab = primeraConContenido;
             if (filaCab < 0) throw new RuntimeException("El archivo está vacío.");
 
             Map<String, Integer> col = new HashMap<>();
@@ -273,10 +311,15 @@ public class ImportacionEmpleadosService {
                 String k = clave(fmt.formatCellValue(c));
                 if (!k.isEmpty()) col.putIfAbsent(ALIAS.getOrDefault(k, k), c.getColumnIndex());
             }
+            Set<String> presentes = new HashSet<>(col.keySet());
+            if (presentes.contains("nombrecompleto")) { // «NOMBRE DEL TRABAJADOR» trae apellidos y nombres juntos
+                presentes.add("nombres");
+                presentes.add("apellidos");
+            }
             List<String> faltantes = COLUMNAS.stream()
                     .filter(Columna::obligatoria)
                     .map(Columna::clave)
-                    .filter(c -> !col.containsKey(clave(c)))
+                    .filter(c -> !presentes.contains(clave(c)))
                     .toList();
             if (!faltantes.isEmpty()) {
                 throw new RuntimeException("Faltan columnas obligatorias: " + String.join(", ", faltantes)
@@ -288,6 +331,9 @@ public class ImportacionEmpleadosService {
             for (int i = filaCab + 1; i <= hoja.getLastRowNum(); i++) {
                 Row fila = hoja.getRow(i);
                 if (filaVacia(fila, fmt)) continue;
+                // Filas de totales o de notas (sin documento ni nombre) no son trabajadores
+                if (texto(fila, col, "numerodocumento", fmt) == null && texto(fila, col, "nombres", fmt) == null
+                        && texto(fila, col, "nombrecompleto", fmt) == null) continue;
                 totalFilas++;
                 int numeroFila = i + 1;
                 if (totalFilas > MAX_FILAS) {
@@ -302,7 +348,16 @@ public class ImportacionEmpleadosService {
                     if (primera != null) {
                         throw new RuntimeException("El documento " + dto.getDni() + " está repetido en el archivo (ya aparece en la fila " + primera + ").");
                     }
-                    validos.add(empleadoService.construirEmpleado(dto));
+                    Empleado empleado = empleadoService.construirEmpleado(dto);
+                    if (dto.getFechaCese() != null) { // la hoja de la contadora trae también a los que ya cesaron
+                        if (dto.getFechaIngreso() != null && dto.getFechaCese().isBefore(dto.getFechaIngreso())) {
+                            throw new RuntimeException("La fecha de cese es anterior a la de ingreso.");
+                        }
+                        empleado.setFechaCese(dto.getFechaCese());
+                        empleado.setEstado("CESADO");
+                        empleado.setMotivoCese("Importado con fecha de cese");
+                    }
+                    validos.add(empleado);
                 } catch (RuntimeException e) {
                     errores.add(new ErrorFila(numeroFila, e.getMessage()));
                 }
@@ -340,10 +395,26 @@ public class ImportacionEmpleadosService {
 
         dto.setNombres(texto(fila, col, "nombres", fmt));
         dto.setApellidos(texto(fila, col, "apellidos", fmt));
+        String completo = texto(fila, col, "nombrecompleto", fmt);
+        if (completo != null && dto.getNombres() == null && dto.getApellidos() == null) {
+            // «APELLIDO PATERNO APELLIDO MATERNO NOMBRES» (como la planilla de la contadora): dos apellidos y el resto nombres
+            String[] partes = completo.trim().split("\\s+");
+            if (partes.length < 2) {
+                throw new RuntimeException("Escriba apellidos y nombres en NOMBRE DEL TRABAJADOR (vino «" + completo + "»).");
+            }
+            int nApellidos = partes.length >= 3 ? 2 : 1;
+            dto.setApellidos(String.join(" ", Arrays.copyOfRange(partes, 0, nApellidos)));
+            dto.setNombres(String.join(" ", Arrays.copyOfRange(partes, nApellidos, partes.length)));
+        }
         dto.setFechaNacimiento(fecha(fila, col, "fechanacimiento", "fecha_nacimiento", fmt));
         dto.setFechaIngreso(fecha(fila, col, "fechaingreso", "fecha_ingreso", fmt));
+        dto.setFechaFinContrato(fechaOpcional(fila, col, "fechafincontrato", "fecha_fin_contrato", fmt));
+        dto.setFechaCese(fechaOpcional(fila, col, "fechacese", "fecha_cese", fmt));
         dto.setCargo(texto(fila, col, "cargo", fmt));
         dto.setArea(texto(fila, col, "area", fmt));
+        dto.setSupervisor(texto(fila, col, "supervisor", fmt));
+        dto.setSede(texto(fila, col, "sede", fmt));
+        dto.setCartera(texto(fila, col, "cartera", fmt));
         dto.setCorreo(texto(fila, col, "correo", fmt));
         dto.setTelefono(textoNumerico(fila, col, "telefono", fmt));
         dto.setSueldoBase(dinero(fila, col, "sueldobase", "sueldo_base", fmt));
@@ -360,24 +431,38 @@ public class ImportacionEmpleadosService {
                 throw new RuntimeException("horas_jornada debe ser un número entero entre 1 y 8 (vacío = 8).");
             }
         }
-        dto.setCuspp(texto(fila, col, "cuspp", fmt));
-        dto.setTipoComisionAfp(texto(fila, col, "tipocomisionafp", fmt));
-
-        // Régimen: por nombre
-        String nombreRegimen = texto(fila, col, "regimen", fmt);
-        if (nombreRegimen == null) {
-            throw new RuntimeException("El régimen laboral es obligatorio.");
+        String cuspp = texto(fila, col, "cuspp", fmt);
+        dto.setCuspp(cuspp != null && cuspp.matches("(?i)x+") ? null : cuspp); // «xxxxxxxx» es un relleno, no un CUSPP
+        String tipoComision = texto(fila, col, "tipocomisionafp", fmt);
+        if (tipoComision != null) { // «Com.Flujo» / «Com.Mixta» de la planilla de la contadora
+            String k = clave(tipoComision);
+            tipoComision = k.contains("mixt") ? "MIXTA" : (k.contains("flujo") ? "FLUJO" : tipoComision);
         }
-        RegimenLaboral regimen = regimenes.get(clave(nombreRegimen));
+        dto.setTipoComisionAfp(tipoComision);
+
+        // Régimen laboral: por nombre; vacío = Régimen General. En la planilla de la contadora la columna «REGIMEN»
+        // es en realidad el sistema de pensiones (ONP, Integra, NO APORTANTE...): se detecta por el valor.
+        String nombreRegimen = texto(fila, col, "regimen", fmt);
+        String pensionDesdeRegimen = null;
+        if (nombreRegimen != null && (VALORES_PENSION.contains(clave(nombreRegimen)) || afps.containsKey(clave(nombreRegimen)))) {
+            pensionDesdeRegimen = nombreRegimen;
+            nombreRegimen = null;
+        }
+        RegimenLaboral regimen = nombreRegimen == null ? regimenes.get(clave("Régimen General")) : regimenes.get(clave(nombreRegimen));
         if (regimen == null) {
-            throw new RuntimeException("Régimen «" + nombreRegimen + "» no existe. Válidos: "
+            throw new RuntimeException("Régimen «" + (nombreRegimen == null ? "Régimen General" : nombreRegimen) + "» no existe. Válidos: "
                     + regimenes.values().stream().map(RegimenLaboral::getNombre).sorted().toList());
         }
         dto.setIdRegimen(regimen.getIdRegimen());
 
         // Pensión
         String sistema = texto(fila, col, "sistemapensionario", fmt);
+        if (sistema == null) sistema = pensionDesdeRegimen;
         String nombreAfp = texto(fila, col, "afp", fmt);
+        if (sistema != null && afps.containsKey(clave(sistema))) { // vino el nombre de la AFP en vez de «AFP»
+            nombreAfp = sistema;
+            sistema = "AFP";
+        }
         if (sistema == null) sistema = nombreAfp != null ? "AFP" : "ONP";
         sistema = sistema.trim().toUpperCase();
         if (sistema.startsWith("SIN") || sistema.startsWith("NO ") || sistema.startsWith("NING")) sistema = "NINGUNO";
@@ -403,44 +488,72 @@ public class ImportacionEmpleadosService {
         return idx == null ? null : fila.getCell(idx);
     }
 
+    /** Una celda con fórmula se lee por su resultado guardado (la hoja de la contadora está llena de fórmulas). */
+    private boolean esNumerica(Cell c) {
+        return c != null && (c.getCellType() == CellType.NUMERIC
+                || (c.getCellType() == CellType.FORMULA && c.getCachedFormulaResultType() == CellType.NUMERIC));
+    }
+
+    private String textoCelda(Cell c, DataFormatter fmt) {
+        if (c == null) return "";
+        if (c.getCellType() == CellType.FORMULA) {
+            return switch (c.getCachedFormulaResultType()) {
+                case NUMERIC -> BigDecimal.valueOf(c.getNumericCellValue()).stripTrailingZeros().toPlainString();
+                case STRING -> c.getStringCellValue().trim();
+                case BOOLEAN -> String.valueOf(c.getBooleanCellValue());
+                default -> "";
+            };
+        }
+        return fmt.formatCellValue(c).trim();
+    }
+
     private String texto(Row fila, Map<String, Integer> col, String clave, DataFormatter fmt) {
-        Cell c = celda(fila, col, clave);
-        if (c == null) return null;
-        String s = fmt.formatCellValue(c).trim();
-        return s.isEmpty() ? null : s;
+        String s = textoCelda(celda(fila, col, clave), fmt);
+        return s.isEmpty() || s.equals("-") ? null : s; // «-» es el vacío de la hoja de la contadora
     }
 
     private boolean esNumerica(Row fila, Map<String, Integer> col, String clave) {
-        Cell c = celda(fila, col, clave);
-        return c != null && c.getCellType() == CellType.NUMERIC;
+        return esNumerica(celda(fila, col, clave));
     }
 
     /** Para documentos, teléfonos y cuentas: si Excel lo guardó como número, se lee sin decimales ni notación científica. */
     private String textoNumerico(Row fila, Map<String, Integer> col, String clave, DataFormatter fmt) {
         Cell c = celda(fila, col, clave);
         if (c == null) return null;
-        if (c.getCellType() == CellType.NUMERIC) {
+        if (esNumerica(c)) {
             return BigDecimal.valueOf(c.getNumericCellValue()).stripTrailingZeros().toPlainString();
         }
-        String s = fmt.formatCellValue(c).trim();
-        return s.isEmpty() ? null : s.replace(" ", "");
+        String s = textoCelda(c, fmt);
+        return s.isEmpty() || s.equals("-") ? null : s.replace(" ", "");
     }
 
     // STRICT: una fecha imposible (31/02/2025) se rechaza en vez de "corregirse" en silencio al 28/02
     private static final List<DateTimeFormatter> FORMATOS_FECHA = List.of(
             DateTimeFormatter.ofPattern("d/M/uuuu").withResolverStyle(ResolverStyle.STRICT),
             DateTimeFormatter.ofPattern("d-M-uuuu").withResolverStyle(ResolverStyle.STRICT),
+            DateTimeFormatter.ofPattern("d/M/uu").withResolverStyle(ResolverStyle.STRICT),   // 10/09/26
             DateTimeFormatter.ISO_LOCAL_DATE);
+
+    /** Fecha que puede venir como texto no fecha («Indefinido», «-»): en ese caso es null. */
+    private LocalDate fechaOpcional(Row fila, Map<String, Integer> col, String clave, String nombreColumna, DataFormatter fmt) {
+        Cell c = celda(fila, col, clave);
+        if (c == null) return null;
+        String s = textoCelda(c, fmt);
+        if (!esNumerica(c) && (s.isEmpty() || s.equals("-") || clave(s).startsWith("indefinid") || clave(s).startsWith("indeterminad"))) {
+            return null;
+        }
+        return fecha(fila, col, clave, nombreColumna, fmt);
+    }
 
     private LocalDate fecha(Row fila, Map<String, Integer> col, String clave, String nombreColumna, DataFormatter fmt) {
         Cell c = celda(fila, col, clave);
         if (c == null) return null;
-        if (c.getCellType() == CellType.NUMERIC) {
+        if (esNumerica(c)) {
             return DateUtil.getJavaDate(c.getNumericCellValue()).toInstant()
                     .atZone(java.time.ZoneId.systemDefault()).toLocalDate();
         }
-        String s = fmt.formatCellValue(c).trim();
-        if (s.isEmpty()) return null;
+        String s = textoCelda(c, fmt);
+        if (s.isEmpty() || s.equals("-")) return null;
         for (DateTimeFormatter f : FORMATOS_FECHA) {
             try {
                 return LocalDate.parse(s, f);
@@ -454,9 +567,9 @@ public class ImportacionEmpleadosService {
     private BigDecimal dinero(Row fila, Map<String, Integer> col, String clave, String nombreColumna, DataFormatter fmt) {
         Cell c = celda(fila, col, clave);
         if (c == null) return null;
-        if (c.getCellType() == CellType.NUMERIC) return BigDecimal.valueOf(c.getNumericCellValue());
-        String s = fmt.formatCellValue(c).trim().replace("S/", "").replace("s/", "").replace(" ", "");
-        if (s.isEmpty()) return null;
+        if (esNumerica(c)) return BigDecimal.valueOf(c.getNumericCellValue());
+        String s = textoCelda(c, fmt).replace("S/", "").replace("s/", "").replace(" ", "");
+        if (s.isEmpty() || s.equals("-")) return null;
         if (s.matches("\\d{1,3}(,\\d{3})+(\\.\\d+)?")) s = s.replace(",", "");  // 1,500.00
         else if (s.matches("\\d+,\\d{1,2}")) s = s.replace(",", ".");           // 1500,50
         try {
@@ -467,10 +580,16 @@ public class ImportacionEmpleadosService {
     }
 
     private boolean siNo(String valor) {
-        if (valor == null) return false;
+        if (valor == null || valor.trim().equals("-")) return false;
+        // La planilla de la contadora trae el monto (113.00 / 123.00): cualquier monto mayor a cero es SI
+        try {
+            return new BigDecimal(valor.trim().replace(",", "")).signum() > 0;
+        } catch (NumberFormatException ignorada) {
+            // no es un monto: se lee como SI / NO
+        }
         return switch (clave(valor)) {
-            case "si", "s", "true", "1", "x", "yes", "y" -> true;
-            case "no", "n", "false", "0" -> false;
+            case "si", "s", "true", "x", "yes", "y" -> true;
+            case "no", "n", "false" -> false;
             default -> throw new RuntimeException("Asignación familiar: escriba SI o NO (vino «" + valor + "»).");
         };
     }

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import pe.Planilla.model.TipoDocumento;
+import pe.Planilla.model.dto.EmpleadoResponseDTO;
 import pe.Planilla.model.dto.ImportacionEmpleadosDTO;
 import pe.Planilla.model.entity.Afp;
 import pe.Planilla.model.entity.Empleado;
@@ -37,7 +38,7 @@ class ImportacionEmpleadosServiceTest {
     private static final String[] COLS = {"tipo_documento", "numero_documento", "nombres", "apellidos", "fecha_nacimiento",
             "fecha_ingreso", "cargo", "area", "correo", "telefono", "sueldo_base", "regimen", "sistema_pensionario", "afp",
             "cuspp", "tipo_comision_afp", "asignacion_familiar", "banco", "cuenta_bancaria", "banco_cts", "cuenta_cts", "id_marcador",
-            "horas_jornada"};
+            "horas_jornada", "fecha_fin_contrato", "supervisor", "sede", "cartera"};
 
     private EmpleadoRepository empleadoRepo;
     private ImportacionEmpleadosService servicio;
@@ -220,6 +221,78 @@ class ImportacionEmpleadosServiceTest {
     void rechazaArchivosQueNoSonExcel() {
         var archivo = new MockMultipartFile("archivo", "datos.csv", "text/csv", "a,b".getBytes());
         assertThrows(RuntimeException.class, () -> servicio.importar(archivo, true));
+    }
+
+    // ------------------------------------------------ hoja PLANILLA de la contadora
+
+    /** La hoja mensual de la contadora tal cual: filas de fórmulas arriba, cabecera en la fila 5, totales abajo. */
+    private MockMultipartFile hojaContadora() throws IOException {
+        try (XSSFWorkbook libro = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet hoja = libro.createSheet("PLANILLA");
+            Object[][] filas = {
+                    {"20", "FULANO", "43112103", "10/09/26", "", "00/01/00", "XXXX", "Alguien", "OLIVOS", "Ventas", "", "Prima", "xxxxxxxx", "Com.Flujo", 1600, 8},
+                    {},
+                    {},
+                    {"", "", "PLANILLA MENSUAL INFORMA.PERÚ SETIEMBRE 2026"},
+                    {"N°", "COD", "NOMBRE DEL TRABAJADOR", "DNI", "FECHA DE INGRESO", "TERMINO DE CONTRATO", "FECHA CESE", "CARGO",
+                            "SUPERVISOR", "SEDE", "CENTRO DE COSTOS", "CARTERA", "REGIMEN", "CUSPP", "TIPO DE COMISIÓN", "BASICO", "hras",
+                            "BASICO", "DM", "ASIG. FAM.", "Cuenta", "Banco"},
+                    {1, 1, "QUISPE ROJAS MARIA ELENA", "45871236", "1/10/2025", "31/12/2026", "", "Asesor", "Abel", "LIMA", "Administrativo",
+                            "ADM", "Habitat", "xxxxxxxx", "Com.Flujo", 5000, 8, 5000, 30, 113, "4883508887273", "INTERBANK"},
+                    {2, 2, "PEREZ LOPEZ JUAN", "12345678", "10/09/26", "Indefinido", "", "Asesor", "Carlos", "OLIVOS", "Ventas", "",
+                            "ONP", "", "", 1600, 4, 800, 21, "-", "", ""},
+                    {3, 3, "GARCIA TORRES ANA", "87654321", "1/01/2026", "", "15/10/2026", "", "", "", "", "", "NO APORTANTE", "", "Com.Mixta",
+                            15000, 8, 15000, 30, "-", "", ""},
+                    {"", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 21600, "", 21600}
+            };
+            for (int r = 0; r < filas.length; r++) {
+                Row fila = hoja.createRow(r);
+                for (int c = 0; c < filas[r].length; c++) {
+                    Object v = filas[r][c];
+                    if (v instanceof Number n) fila.createCell(c).setCellValue(n.doubleValue());
+                    else fila.createCell(c).setCellValue(v.toString());
+                }
+            }
+            libro.write(out);
+            return new MockMultipartFile("archivo", "09.Planilla Setiembre 2026.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", out.toByteArray());
+        }
+    }
+
+    @Test
+    void aceptaLaHojaMensualDeLaContadoraTalCual() throws IOException {
+        ImportacionEmpleadosDTO r = servicio.importar(hojaContadora(), true);
+        assertEquals(List.of(), r.getErrores().stream().map(e -> e.getFila() + ": " + e.getMensaje()).toList());
+        assertEquals(3, r.getTotalFilas()); // las filas de fórmulas de arriba y la de totales no cuentan
+        assertEquals(3, r.getFilasValidas());
+
+        EmpleadoResponseDTO maria = r.getEmpleados().get(0);
+        assertEquals("MARIA ELENA QUISPE ROJAS", maria.getNombresCompletos()); // dos apellidos + nombres
+        assertEquals("AFP", maria.getSistemaPensionario());
+        assertEquals("Habitat", maria.getAfp());
+        assertEquals("FLUJO", maria.getTipoComisionAfp());
+        assertNull(maria.getCuspp()); // «xxxxxxxx» no es un CUSPP
+        assertTrue(maria.getAsignacionFamiliar()); // 113.00 en ASIG. FAM.
+        assertEquals(8, maria.getHorasJornada());
+        assertEquals(LocalDate.of(2026, 12, 31), maria.getFechaFinContrato());
+        assertEquals("Abel", maria.getSupervisor());
+        assertEquals("LIMA", maria.getSede());
+        assertEquals("Administrativo", maria.getArea());
+        assertEquals("ADM", maria.getCartera());
+        assertEquals("INTERBANK", maria.getBanco());
+        assertEquals("4883508887273", maria.getCuentaBancaria());
+        assertEquals("Régimen General", maria.getRegimenLaboral()); // la columna REGIMEN de la hoja es la pensión
+
+        EmpleadoResponseDTO juan = r.getEmpleados().get(1);
+        assertEquals("ONP", juan.getSistemaPensionario());
+        assertEquals(4, juan.getHorasJornada());
+        assertEquals(LocalDate.of(2026, 9, 10), juan.getFechaIngreso()); // 10/09/26
+        assertNull(juan.getFechaFinContrato());                           // «Indefinido»
+        assertFalse(juan.getAsignacionFamiliar());                        // «-»
+
+        EmpleadoResponseDTO ana = r.getEmpleados().get(2);
+        assertEquals("NINGUNO", ana.getSistemaPensionario());
+        assertEquals("CESADO", ana.getEstado());
+        assertEquals(LocalDate.of(2026, 10, 15), ana.getFechaCese());
     }
 
     // ----------------------------------------------------------- tipos de documento

@@ -50,6 +50,13 @@ public class Empleado {
     private String bancoCts;
     private String cuentaCts;
 
+    /** Organización según la planilla de la contadora (opcionales): supervisor, sede y cartera; el centro de costos va en "area". */
+    private String supervisor;
+    private String sede;
+    private String cartera;
+    /** Fin del contrato a plazo fijo (null = indefinido). Informativo: no cesa al trabajador por sí solo. */
+    private LocalDate fechaFinContrato;
+
     /** ACTIVO o CESADO. */
     private String estado;
 

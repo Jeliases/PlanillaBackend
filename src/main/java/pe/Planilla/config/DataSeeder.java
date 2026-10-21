@@ -85,7 +85,9 @@ public class DataSeeder implements ApplicationRunner {
             log.warn("Se activaron los usuarios existentes (migración de la columna 'activo').");
         }
 
-        if (usuarioRepository.count() == 0) {
+        if (usuarioRepository.count() == 0 && (adminPassword == null || adminPassword.isBlank())) {
+            log.error("No hay usuarios y ADMIN_PASSWORD esta vacia: no se crea el usuario inicial. Defina ADMIN_PASSWORD y reinicie.");
+        } else if (usuarioRepository.count() == 0) {
             Usuario admin = new Usuario();
             admin.setUsername(adminUsername);
             admin.setPassword(passwordEncoder.encode(adminPassword));

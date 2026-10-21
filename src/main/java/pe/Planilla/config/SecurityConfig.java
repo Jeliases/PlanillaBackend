@@ -46,6 +46,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login").permitAll()
                         // El handshake del WebSocket es público; el JWT se valida en el CONNECT de STOMP (ver WebSocketConfig)
                         .requestMatchers("/ws/**").permitAll()
+                        // Chequeo de salud del contenedor (no expone datos)
+                        .requestMatchers("/actuator/health").permitAll()
                         // La pantalla de Angular (index.html, js, css) es pública; los datos siguen protegidos por /api/**
                         .requestMatchers((RequestMatcher) request ->
                                 "GET".equals(request.getMethod()) && !request.getRequestURI().startsWith("/api/")).permitAll()
